@@ -5,6 +5,10 @@ import PackageDescription
 
 let package = Package(
     name: "ZhareHubSDK",
+    platforms: [
+        .iOS(.v17),
+        .macCatalyst(.v17)
+    ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
@@ -12,15 +16,19 @@ let package = Package(
             targets: ["ZhareHubSDK"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/hariharan-rs-19343/SUICore.git", branch: "main")
+    ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "ZhareHubSDK"
+            name: "ZhareHubSDK",
+            dependencies: ["SUICore"]
         ),
         .testTarget(
             name: "ZhareHubSDKTests",
             dependencies: ["ZhareHubSDK"]
         ),
     ]
-)
+)  

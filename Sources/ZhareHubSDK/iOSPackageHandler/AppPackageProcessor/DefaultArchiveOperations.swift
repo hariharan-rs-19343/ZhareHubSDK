@@ -1,0 +1,16 @@
+//
+//  DefaultArchiveOperations.swift
+//  ZhareHub
+//
+//  Created by Hariharan R S on 13/03/25.
+//
+
+import Foundation
+//import Zip
+
+final class DefaultArchiveOperations: ArchiveOperationsProtocol {
+    
+    func extractArchive(file: URL, to destination: URL, overwrite: Bool = true, password: String? = nil) throws {
+//        try Zip.unzipFile(file, destination: destination, overwrite: overwrite, password: password)
+    }
+}

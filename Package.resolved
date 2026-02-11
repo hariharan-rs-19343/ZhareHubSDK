@@ -1,0 +1,15 @@
+{
+  "originHash" : "71ccd7e336ec2addb5338bac6063deef6d5b8492d3fe7562703ca0a4be8cc8a8",
+  "pins" : [
+    {
+      "identity" : "suicore",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/hariharan-rs-19343/SUICore.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "0241e4408b7e6cd347db035913aa86a9ec3b0b6a"
+      }
+    }
+  ],
+  "version" : 3
+}
