@@ -1,13 +1,22 @@
 {
-  "originHash" : "71ccd7e336ec2addb5338bac6063deef6d5b8492d3fe7562703ca0a4be8cc8a8",
+  "originHash" : "fbd4862c81b3fe2ce8a37f53db8f64ecf33a0bcbfbb0caff041bf03d6559cbbd",
   "pins" : [
+    {
+      "identity" : "alamofire",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Alamofire/Alamofire.git",
+      "state" : {
+        "revision" : "3f99050e75bbc6fe71fc323adabb039756680016",
+        "version" : "5.11.1"
+      }
+    },
     {
       "identity" : "suicore",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/hariharan-rs-19343/SUICore.git",
       "state" : {
         "branch" : "main",
-        "revision" : "0241e4408b7e6cd347db035913aa86a9ec3b0b6a"
+        "revision" : "f12901b63a0d90d6e5bcbceb75aca027a4c16f9b"
       }
     }
   ],

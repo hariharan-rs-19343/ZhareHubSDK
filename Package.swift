@@ -17,14 +17,15 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/hariharan-rs-19343/SUICore.git", branch: "main")
+        .package(url: "https://github.com/hariharan-rs-19343/SUICore.git", branch: "main"),
+        .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.10.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "ZhareHubSDK",
-            dependencies: ["SUICore"]
+            dependencies: ["SUICore", "Alamofire"]
         ),
         .testTarget(
             name: "ZhareHubSDKTests",
