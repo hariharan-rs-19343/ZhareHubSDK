@@ -1,5 +1,5 @@
 {
-  "originHash" : "fbd4862c81b3fe2ce8a37f53db8f64ecf33a0bcbfbb0caff041bf03d6559cbbd",
+  "originHash" : "89a28398b956fd1f6a2dedc13efdf6df48346d507b5444ae91b49dc22c678021",
   "pins" : [
     {
       "identity" : "alamofire",
@@ -17,6 +17,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "f12901b63a0d90d6e5bcbceb75aca027a4c16f9b"
+      }
+    },
+    {
+      "identity" : "zip",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/marmelroy/Zip.git",
+      "state" : {
+        "revision" : "67fa55813b9e7b3b9acee9c0ae501def28746d76",
+        "version" : "2.1.2"
       }
     }
   ],
