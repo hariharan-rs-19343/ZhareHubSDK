@@ -8,7 +8,7 @@
 import Foundation
 
 
-protocol PackageParserProtocol {
+public protocol PackageParserProtocol {
     func extractXMLFromProvision(_ data: Data) -> Result<Data, Error>
     func deserializePlist(_ plistData: Data) -> Result<[String: Any]?, Error>
     func loadBundleProperties(with plistDictionary: [String: Any]) -> BundleProperties?

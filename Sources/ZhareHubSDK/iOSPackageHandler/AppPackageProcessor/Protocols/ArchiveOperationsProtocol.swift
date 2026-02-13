@@ -7,6 +7,6 @@
 
 import Foundation
 
-protocol ArchiveOperationsProtocol {
+public protocol ArchiveOperationsProtocol {
     func extractArchive(file: URL, to destination: URL, overwrite: Bool, password: String?) throws
 }

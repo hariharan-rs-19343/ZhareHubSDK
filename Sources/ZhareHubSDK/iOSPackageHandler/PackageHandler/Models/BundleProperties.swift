@@ -7,18 +7,18 @@
 
 import Foundation
 
-struct BundleProperties: Decodable, Identifiable, Hashable {
-    var id: String { bundleIdentifier ?? UUID().uuidString }
-    let bundleName: String?
-    let bundleVersionShort: String?
-    let bundleVersion: String?
-    let bundleIdentifier: String?
-    let minimumOSVersion: String?
-    let requiredDeviceCompability: [String]?
-    let supportedPlatform: [String]?
-    let bundleIcon: String?
-    let redirectURL: String?
-    let appCategory: Bundle.ApplicationCategory
+public struct BundleProperties: Decodable, Identifiable, Hashable {
+    public var id: String { bundleIdentifier ?? UUID().uuidString }
+    public let bundleName: String?
+    public let bundleVersionShort: String?
+    public let bundleVersion: String?
+    public let bundleIdentifier: String?
+    public let minimumOSVersion: String?
+    public let requiredDeviceCompability: [String]?
+    public let supportedPlatform: [String]?
+    public let bundleIcon: String?
+    public let redirectURL: String?
+    public let appCategory: Bundle.ApplicationCategory
     
     enum CodingKeys: String, CodingKey {
         case bundleName = "CFBundleName"
@@ -33,7 +33,7 @@ struct BundleProperties: Decodable, Identifiable, Hashable {
         case appCategory = "LSApplicationCategoryType"
     }
     
-    init(from decoder: any Decoder) throws {
+    public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.bundleName = try container.decodeIfPresent(String.self, forKey: .bundleName)
         self.bundleVersionShort = try container.decodeIfPresent(String.self, forKey: .bundleVersionShort)
@@ -58,7 +58,7 @@ struct BundleProperties: Decodable, Identifiable, Hashable {
         }
     }
     
-    init?(from dictionary: [String: Any]) {
+    public init?(from dictionary: [String: Any]) {
         self.bundleName = dictionary["CFBundleName"] as? String
         self.bundleVersionShort = dictionary["CFBundleShortVersionString"] as? String
         self.bundleVersion = dictionary["CFBundleVersion"] as? String

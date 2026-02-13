@@ -8,13 +8,15 @@
 import Foundation
 import SUICore
 
-final class DefaultPackageConversion: PackageConversionProtocol {
+public final class DefaultPackageConversion: PackageConversionProtocol {
+    
+    public init() {}
     
     private var appCacheDirector: URL {
         ZFFileManager.shared.appCacheDirectory
     }
     
-    func prepareArchiveFormat(of sourceURL: URL) throws -> URL {
+    public func prepareArchiveFormat(of sourceURL: URL) throws -> URL {
         let destinationURL = replaceExtensionNameWithZip(of: sourceURL)
         try ZFFileManager.shared.copyFile(from: sourceURL, to: destinationURL)
         return destinationURL

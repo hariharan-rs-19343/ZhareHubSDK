@@ -7,12 +7,12 @@
 
 import Foundation
 
-struct MobileProvision: Hashable {
-    let name: String
-    let teamIdentifier: [String]
-    let creationDate: Date
-    let expirationDate: Date
-    let teamName: String
+public struct MobileProvision: Hashable {
+    public let name: String
+    public let teamIdentifier: [String]
+    public let creationDate: Date
+    public let expirationDate: Date
+    public let teamName: String
     var isExpired: Bool {
         isMobileProvisionValid(expirationDate)
     }
@@ -25,7 +25,7 @@ struct MobileProvision: Hashable {
         case teamName = "TeamName"
     }
     
-    init?(from dictionary: [String: Any]) {
+    public init?(from dictionary: [String: Any]) {
         guard let name = dictionary[CodingKeys.name.rawValue] as? String,
               let teamIdentifier = dictionary[CodingKeys.teamIdentifier.rawValue] as? [String],
               let creationDate = dictionary[CodingKeys.creationDate.rawValue] as? Date,
@@ -47,7 +47,7 @@ struct MobileProvision: Hashable {
     }
 }
 
-struct Entitlements: Codable {
+public struct Entitlements: Codable {
     let teamIdentifier: [String]?
     let getTaskAllow: Bool?
     let applicationIdentifier: String?

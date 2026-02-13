@@ -6,11 +6,13 @@
 //
 
 import Foundation
-//import Zip
+import Zip
 
-final class DefaultArchiveOperations: ArchiveOperationsProtocol {
+public final class DefaultArchiveOperations: ArchiveOperationsProtocol {
     
-    func extractArchive(file: URL, to destination: URL, overwrite: Bool = true, password: String? = nil) throws {
-//        try Zip.unzipFile(file, destination: destination, overwrite: overwrite, password: password)
+    public init() {}
+    
+    public func extractArchive(file: URL, to destination: URL, overwrite: Bool = true, password: String? = nil) throws {
+        try Zip.unzipFile(file, destination: destination, overwrite: overwrite, password: password)
     }
 }

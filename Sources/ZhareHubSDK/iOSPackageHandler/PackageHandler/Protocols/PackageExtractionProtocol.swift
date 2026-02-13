@@ -7,6 +7,6 @@
 
 import Foundation
 
-protocol PackageExtractionProtocol {
+public protocol PackageExtractionProtocol {
     func initiateAppExtraction(from url: URL, fileName: String) -> Result<PackageExtractionModel, Error>
 }

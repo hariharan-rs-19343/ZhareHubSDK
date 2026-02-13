@@ -8,7 +8,7 @@
 import SwiftUI
 import SUICore
 
-final class PackageExtractionHandler: PackageExtractionProtocol {
+public final class PackageExtractionHandler: PackageExtractionProtocol {
     
     // Dependencies
     private let appPackageProcessor: PackageProcessorProtocol
@@ -23,7 +23,7 @@ final class PackageExtractionHandler: PackageExtractionProtocol {
     private let fileManager = FileManager.default
     private let appCacheDirectory: URL = ZFFileManager.shared.appCacheDirectory
     
-    init(
+    public init(
         appPackageProcessor: PackageProcessorProtocol = AppPackageProcessor(),
         parser packageParseHandler: PackageParserProtocol = DefaultPackageParser()
     ) {
@@ -31,7 +31,7 @@ final class PackageExtractionHandler: PackageExtractionProtocol {
         self.packageParseHandler = packageParseHandler
     }
     
-    func initiateAppExtraction(from url: URL, fileName: String) -> Result<PackageExtractionModel, Error> {
+    public func initiateAppExtraction(from url: URL, fileName: String) -> Result<PackageExtractionModel, Error> {
         self.sourceURL = url
         self.fileName = fileName
         

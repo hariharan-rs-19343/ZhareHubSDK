@@ -8,7 +8,7 @@
 import Foundation
 import SUICore
 
-final class AppPackageProcessor: PackageProcessorProtocol {
+public final class AppPackageProcessor: PackageProcessorProtocol {
     
     private let archiveOperations: ArchiveOperationsProtocol
     private let packageConversion: PackageConversionProtocol
@@ -17,14 +17,14 @@ final class AppPackageProcessor: PackageProcessorProtocol {
         ZFFileManager.shared.appCacheDirectory
     }
     
-    init(archiveOperations: ArchiveOperationsProtocol = DefaultArchiveOperations(),
+    public init(archiveOperations: ArchiveOperationsProtocol = DefaultArchiveOperations(),
          packageConversion: PackageConversionProtocol = DefaultPackageConversion())
     {
         self.archiveOperations = archiveOperations
         self.packageConversion = packageConversion
     }
     
-    func processPackage(of sourceURL: URL) throws -> URL {
+    public func processPackage(of sourceURL: URL) throws -> URL {
         // Clear existing cache
         try ZFFileManager.shared.clearCache()
         

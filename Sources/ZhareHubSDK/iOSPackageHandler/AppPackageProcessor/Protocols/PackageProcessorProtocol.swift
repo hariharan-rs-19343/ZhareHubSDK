@@ -7,6 +7,6 @@
 
 import Foundation
 
-protocol PackageProcessorProtocol {
+public protocol PackageProcessorProtocol {
     func processPackage(of sourceURL: URL) throws -> URL
 }

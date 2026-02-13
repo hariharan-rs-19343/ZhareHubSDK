@@ -7,7 +7,7 @@
 
 import Foundation
 
-protocol PackageConversionProtocol {
+public protocol PackageConversionProtocol {
     
     /// Converts a package file to ZIP format and returns the location of the converted file
     /// - Returns: URL to the converted ZIP file if successful

@@ -8,16 +8,18 @@
 import Foundation
 import SUICore
 
-enum PropertyListError: Error {
+public enum PropertyListError: Error {
     case missingRequiredData
     case failedToCreateFile
 }
 
-final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
+public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
 
     private var cacheDirectory: URL {
         ZFFileManager.shared.appCacheDirectory
     }
+    
+    public init() {}
     
     /**
      Creates a plist file at the specified path with the given parameters.
@@ -35,7 +37,7 @@ final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
      
      - Returns: A `Result` containing the URL of the created plist file on success or a `PropertyListError` on failure.
      */
-    func createPlistFile(url ipaURL: String, bundleIdentifier: String?, bundleVersion: String?, fileName: String?, content: [String : Any]?) -> Result<URL, Error> {
+    public func createPlistFile(url ipaURL: String, bundleIdentifier: String?, bundleVersion: String?, fileName: String?, content: [String : Any]?) -> Result<URL, Error> {
         guard let (finalFileName, finalBundleIdentifier, finalBundleVersion) = resolvePlistData(content: content, fileName: fileName, bundleIdentifier: bundleIdentifier, bundleVersion: bundleVersion) else
         {
             return .failure(PropertyListError.missingRequiredData)
@@ -64,7 +66,7 @@ final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
         - `ZError.FileConversionError.invalidFilePath` if the specified path is invalid or the file does not
         - `ZError.FileConversionError.fileReadFailed` if the XML content cannot be located or read.
      */
-    func extractXMLDataFromMobileProvision(_ provisionData: Data) -> Result<Data, Error> {
+    public func extractXMLDataFromMobileProvision(_ provisionData: Data) -> Result<Data, Error> {
         do {
             // Locate the XML start and end indices
             let (startRange, endRange) = try rangeOfStartAndEndIndex(of: provisionData)
@@ -90,7 +92,7 @@ final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
 
      - Returns: A dictionary representing the structure of the property list.
      */
-    func createPlistDictionary(ipaURL: String, fileName: String, bundleIdentifier: String, bundleVersion: String) -> [String: Any] {
+    public func createPlistDictionary(ipaURL: String, fileName: String, bundleIdentifier: String, bundleVersion: String) -> [String: Any] {
         return [
             "items": [
                 [
@@ -111,7 +113,7 @@ final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
         ]
     }
     
-    func deserializePlist(_ plistData: Data) -> Result<[String: Any]?, Error> {
+    public func deserializePlist(_ plistData: Data) -> Result<[String: Any]?, Error> {
         guard let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any] else {
             return .failure(FileConversionError.deserialiizationError)
         }

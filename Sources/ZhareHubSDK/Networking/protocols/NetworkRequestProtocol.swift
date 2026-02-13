@@ -8,7 +8,7 @@
 import Foundation
 import Alamofire
 
-public protocol NetworkRequestProtocol {
+public protocol NetworkRequestProtocol: Sendable {
     var path: String { get }
     var method: HTTPMethod { get }
     var headers: HTTPHeaders? { get }
