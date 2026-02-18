@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import Zip
+internal import Zip
 
 public final class DefaultArchiveOperations: ArchiveOperationsProtocol {
     
