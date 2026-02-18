@@ -7,6 +7,7 @@
 
 import Foundation
 import SUICore
+import UniformTypeIdentifiers
 
 public final class AppPackageProcessor: PackageProcessorProtocol {
     
@@ -25,16 +26,42 @@ public final class AppPackageProcessor: PackageProcessorProtocol {
     }
     
     public func processPackage(of sourceURL: URL) throws -> URL {
-        // Clear existing cache
+        /// Clear existing cache
         try ZFFileManager.shared.clearCache()
         
-        // Convert ipa file to zip file
-        let zipLocation = try packageConversion.prepareArchiveFormat(of: sourceURL)
+        guard let fileExtension = getPackageExtension(at: sourceURL) else {
+            throw FileConversionError.unsupportedFile
+        }
         
-        // Extract zip file in app cache directory
-        try archiveOperations.extractArchive(file: zipLocation, to: appCacheDirectory, overwrite: true, password: nil)
+        switch fileExtension {
+        case .ipa:
+            let zipLocation = try packageConversion.prepareArchiveFormat(of: sourceURL) // Convert ipa file to zip file, then extract
+            try archiveOperations.extractArchive(file: zipLocation, to: appCacheDirectory, overwrite: true, password: nil)
+            return appCacheDirectory.appending(path: ZHConstants.PAYLOAD) // Append Payload path in app cache directory
+        case .zip:
+            try archiveOperations.extractArchive(file: sourceURL, to: appCacheDirectory, overwrite: true, password: nil) // Extract zip file directly in app cache directory
+            return appCacheDirectory
+            
+        case .app:
+            /// .app bundle — copy into a Payload directory in cache
+            return sourceURL
+        default:
+            throw FileConversionError.unsupportedFile
+        }
+    }
+    
+    private func getPackageExtension(at url: URL) -> UTType? {
+        // Using the file extension
+        if let type = UTType(filenameExtension: url.pathExtension) {
+            return type
+        }
         
-        // append payload in appcache directory
-        return appCacheDirectory.appending(path: ZHConstants.PAYLOAD)
+        // Fallback: Using resource values
+        if let resourceValues = try? url.resourceValues(forKeys: [.contentTypeKey]),
+           let type = resourceValues.contentType {
+            return type
+        }
+        
+        return nil
     }
 }

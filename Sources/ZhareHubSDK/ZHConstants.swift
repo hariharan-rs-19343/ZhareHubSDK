@@ -11,7 +11,8 @@ struct ZHConstants {
     
     // FILE AND FOLDER NAME
     static let PAYLOAD: String = "Payload"
-    static let EMBEDDED_PROVISION: String = "embedded.mobileprovision"
+    static let EMBEDDED_MOBILE_PROVISION: String = "embedded.mobileprovision"
+    static let EMBEDDED_PROVISION_PROFILE: String = "embedded.provisionprofile"
     static let INFO_PLIST: String = "Info.plist"
     
     // INSTALLATION PREFIX

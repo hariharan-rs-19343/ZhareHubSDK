@@ -49,7 +49,7 @@ public final class PackageExtractionHandler: PackageExtractionProtocol {
             // Convert package file into data
             fileTypeWithDataMapper[.app] = try fileToData(from: url)
             
-            let payloadPath = try appPackageProcessor.processPackage(of: url)
+            let payloadPath: URL = try appPackageProcessor.processPackage(of: url)
             
             let packageModel: PackageExtractionModel = try processAppBundle(path: payloadPath)
             
@@ -71,13 +71,18 @@ public final class PackageExtractionHandler: PackageExtractionProtocol {
             throw writeLogsAndThrow(error: .custom("App directory does not exist at path"))
         }
 
-        ZOSLogs.shared.warning("APP PATH DIRECTORY: \(appPathDirectory)")
+        ZOSLogs.shared.info("APP PATH DIRECTORY: \(appPathDirectory)")
         
         // Info.plist
-        try convertInfoPlistFileAsData(at: getSourcePath(of: .infoPlist, from: appPathDirectory))
+        fileTypeWithDataMapper[.infoPlist] = try convertFileAsData(at: getSourcePath(of: .infoPlist, from: appPathDirectory), type: .infoPlist)
         
         // embedded.plist
-        try convertMobileProvisionFileAsData(at: getSourcePath(of: .mobileprovision, from: appPathDirectory))
+        if let mobileProvision = try? convertFileAsData(at: getSourcePath(of: .mobileprovision, from: appPathDirectory), type: .mobileprovision) {
+            fileTypeWithDataMapper[.mobileprovision] = mobileProvision
+        }
+        if let provisionalProfile = try? convertFileAsData(at: getSourcePath(of: .provisionProfile, from: appPathDirectory), type: .provisionProfile) {
+            fileTypeWithDataMapper[.mobileprovision] = provisionalProfile
+        }
         
         // Read app icon name from Info.plist
         let appIconFileName = try readAppIconFileNameFromInfoPlist()
@@ -89,33 +94,55 @@ public final class PackageExtractionHandler: PackageExtractionProtocol {
     }
     
     private func doesPayloadPathExist(at path: URL) -> Bool {
-        return fileManager.fileExists(atPath: path.path())
+        return fileManager.fileExists(atPath: path.path(percentEncoded: false))
     }
     
     private func getAppDirectoryPath(from payloadPath: URL) -> URL? {
-        guard let subPaths = try? fileManager.contentsOfDirectory(
+        // Safe check: current payload path is .app url
+        if let appURL = matchAppBundle(payloadPath) {
+            return appURL.appending(component: "Contents")
+        }
+        
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .isPackageKey]
+        guard let subPaths = try? fileManager.enumerator(
             at: payloadPath,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: keys,
             options: [.skipsHiddenFiles]
         ) else {
             return nil
         }
         
-        let appDirectory: URL? = try? subPaths.filter { url in
-            let resourceValue = try url.resourceValues(forKeys: [.isDirectoryKey])
-            return resourceValue.isDirectory == true && url.pathExtension == "app"
-        }.first
-        
-        return appDirectory
-    }
-    
-    private func convertInfoPlistFileAsData(at path: String) throws {
-        // Check file exist in path and convert file into data
-        guard fileManager.fileExists(atPath: path) else {
-            throw writeLogsAndThrow(error: .infoPlistNotFoundInPayload)
+        for case let fileURL as URL in subPaths {
+            if let appURL = matchAppBundle(fileURL) {
+                subPaths.skipDescendants()
+                return appURL
+            }
         }
         
-        fileTypeWithDataMapper[.infoPlist] = try fileToData(from: URL(fileURLWithPath: path))
+        return nil
+    }
+    
+    /// Checks whether the given URL is an `.app` bundle and returns it if so.
+    /// If the URL is a package, the enumerator skips its descendants.
+    private func matchAppBundle(_ fileURL: URL) -> URL? {
+        guard fileURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame else {
+            return nil
+        }
+        
+        if let values = try? fileURL.resourceValues(forKeys: [.isPackageKey, .isApplicationKey]), (values.isPackage == true || values.isApplication == true) {
+            return fileURL
+        }
+        
+        return nil
+    }
+    
+    private func convertFileAsData(at path: String, type: SupportedFileTypes) throws -> Data {
+        // Check file exist in path and convert file into data
+        guard fileManager.fileExists(atPath: path) else {
+            throw writeLogsAndThrow(error: type.getError)
+        }
+        
+        return try fileToData(from: URL(filePath: path))
     }
     
     private func readAppIconFileNameFromInfoPlist() throws -> String {
@@ -134,16 +161,6 @@ public final class PackageExtractionHandler: PackageExtractionProtocol {
         }
         
         return bundleProperties.bundleIcon ?? "AppIcon"
-    }
-    
-    private func convertMobileProvisionFileAsData(at path: String) throws {
-        // Check file exist in path and convert file into data
-        guard fileManager.fileExists(atPath: path) else {
-            throw writeLogsAndThrow(error: .provisioningProfileNotFoundInPayload)
-        }
-        
-        // Read the file content
-        fileTypeWithDataMapper[.mobileprovision] = try fileToData(from: URL(fileURLWithPath: path))
     }
     
     private func createAppIconAsData(at payloadPath: URL, iconName appIconFileName: String) throws {
@@ -180,7 +197,7 @@ public final class PackageExtractionHandler: PackageExtractionProtocol {
     private func getSourcePath(of fileType: SupportedFileTypes, from payloadPath: URL, appIconName: String = "") -> String {
         switch fileType {
             case .mobileprovision:
-                let provisionPath = payloadPath.appending(component: ZHConstants.EMBEDDED_PROVISION).path()
+                let provisionPath = payloadPath.appending(component: ZHConstants.EMBEDDED_MOBILE_PROVISION).path()
                 return provisionPath.removingPercentEncoding ?? provisionPath
             case .infoPlist:
                 let plistPath = payloadPath.appending(component: ZHConstants.INFO_PLIST).path()
@@ -188,6 +205,9 @@ public final class PackageExtractionHandler: PackageExtractionProtocol {
             case .icon:
                 let iconPath = payloadPath.appending(component: appIconName).path()
                 return iconPath.removingPercentEncoding ?? iconPath
+            case .provisionProfile:
+                let provisionPath = payloadPath.appending(component: ZHConstants.EMBEDDED_PROVISION_PROFILE).path()
+                return provisionPath.removingPercentEncoding ?? provisionPath
             default:
                 return ""
         }
