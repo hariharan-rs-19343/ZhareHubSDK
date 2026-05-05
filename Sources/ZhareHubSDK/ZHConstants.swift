@@ -17,4 +17,9 @@ struct ZHConstants {
     
     // INSTALLATION PREFIX
     static let INSTALLATION_PREFIX: String = "itms-services://?action=download-manifest&url="
+    
+    // ANDROID / APK
+    static let AAPT2_TOOL_NAME: String = "aapt2"
+    static let APK_FILE_EXTENSION: String = "apk"
+    static let ANDROID_MANIFEST: String = "AndroidManifest.xml"
 }

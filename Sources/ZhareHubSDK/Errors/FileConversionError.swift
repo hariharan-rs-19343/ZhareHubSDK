@@ -17,6 +17,7 @@ public enum FileConversionError: ErrorProtocol {
         case appIconNotFoundInPayload
         case provisioningProfileNotFoundInPayload
         case deserialiizationError
+        case unsupportedPlatform
         case custom(String)
         
         public var errorDescription: String? {
@@ -39,6 +40,8 @@ public enum FileConversionError: ErrorProtocol {
                 return NSLocalizedString("Provisioning profile not found in the payload", comment: "Displayed when the provisioning profile is not found in the provided payload")
             case .deserialiizationError:
                 return NSLocalizedString("Failed to deserialize the property list.", comment: "Displayed when the property list data cannot be parsed into a valid JSON object.")
+            case .unsupportedPlatform:
+                return NSLocalizedString("This operation is not supported on the current platform. Mac Catalyst is required.", comment: "Displayed when an operation requires Mac Catalyst (e.g., APK analysis) but is invoked on iOS.")
             case .custom(let errorMessage):
                 return NSLocalizedString(errorMessage, comment: "")
             }

@@ -66,9 +66,14 @@ public extension PackageExtractionProtocol {
     
     func generateDefaultAppIconData(fileName: String?) -> Data? {
         let name = fileName ?? ""
-        let uiImage: UIImage? = MainActor.assumeIsolated {
-            LetterAvatar(name: name).image
+        let render: () -> UIImage? = {
+            MainActor.assumeIsolated {
+                LetterAvatar(name: name).image
+            }
         }
+        let uiImage: UIImage? = Thread.isMainThread
+            ? render()
+            : DispatchQueue.main.sync(execute: render)
         return uiImage?.pngData()
     }
 }
