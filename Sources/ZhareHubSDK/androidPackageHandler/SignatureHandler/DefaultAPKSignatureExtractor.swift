@@ -14,7 +14,6 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
     public init() {}
 
     public func extract(from apkPath: URL) -> APKSignatureInfo {
-        var schemes: [String] = []
         var signerDN: String = "N/A"
 
         // --- v1: META-INF/*.RSA/.DSA/.EC ---
@@ -26,28 +25,22 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
             let sigBlockEntry = metaEntries.first { path in
                 sigBlockExtensions.contains { path.uppercased().hasSuffix($0) }
             }
-            if hasManifest && hasSF && sigBlockEntry != nil {
-                schemes.append("v1")
-                if signerDN == "N/A",
-                   let blockPath = sigBlockEntry,
-                   let pkcs7Data = zip.extractEntry(path: blockPath) {
-                    signerDN = extractCertificateDN(from: pkcs7Data)
-                }
+            if hasManifest && hasSF,
+               let blockPath = sigBlockEntry,
+               let pkcs7Data = zip.extractEntry(path: blockPath) {
+                signerDN = extractCertificateDN(from: pkcs7Data)
             }
         }
 
         // --- v2 / v3: APK Signing Block ---
-        if let certData = extractCertFromSigningBlock(at: apkPath) {
-            if certData.v2 { schemes.append("v2") }
-            if certData.v3 { schemes.append("v3") }
-            if signerDN == "N/A", let der = certData.certificate,
-               let cert = SecCertificateCreateWithData(nil, der as CFData) {
-                signerDN = formatCertificateDN(cert)
-            }
+        if signerDN == "N/A",
+           let certData = extractCertFromSigningBlock(at: apkPath),
+           let der = certData.certificate,
+           let cert = SecCertificateCreateWithData(nil, der as CFData) {
+            signerDN = formatCertificateDN(cert)
         }
 
-        let schemesStr = schemes.isEmpty ? "None" : schemes.joined(separator: ", ")
-        return APKSignatureInfo(signer: signerDN, signingSchemes: schemesStr)
+        return APKSignatureInfo(signer: signerDN)
     }
 
     // MARK: - APK Signing Block (v2/v3)
