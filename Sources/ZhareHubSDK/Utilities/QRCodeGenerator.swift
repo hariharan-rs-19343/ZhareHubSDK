@@ -139,7 +139,12 @@ public enum QRCodeGenerator: Sendable {
         let scaledImage = finalImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
 
         let context = CIContext()
-        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
+        guard let cgImage = context.createCGImage(
+            scaledImage,
+            from: scaledImage.extent,
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        ) else {
             throw .pngConversionFailed
         }
 
