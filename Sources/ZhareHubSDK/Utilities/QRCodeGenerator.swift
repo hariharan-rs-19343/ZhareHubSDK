@@ -93,12 +93,14 @@ public enum QRCodeGenerator: Sendable {
     ///   - string: The content to encode in the QR code.
     ///   - scaleFactor: The scale multiplier for the output image (default: `.large`).
     ///   - correctionLevel: The error correction level (default: `.medium`).
+    ///   - isOpaque: Whether to render with a white background (`true`) or transparent background (`false`). Default is `false`.
     /// - Returns: PNG-encoded image data of the generated QR code.
     /// - Throws: ``GenerationError`` if encoding, filter output, or PNG conversion fails.
     public static func generate(
         from string: String,
         scaleFactor: ScaleFactor = .large,
-        correctionLevel: CorrectionLevel = .medium
+        correctionLevel: CorrectionLevel = .medium,
+        isOpaque: Bool = false
     ) throws(GenerationError) -> Data {
         guard let messageData = string.data(using: .utf8) else {
             throw .encodingFailed
@@ -112,10 +114,36 @@ public enum QRCodeGenerator: Sendable {
             throw .filterOutputFailed
         }
 
-        let scale = scaleFactor.rawValue
-        let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let finalImage: CIImage
 
-        guard let pngData = UIImage(ciImage: scaledImage).pngData() else {
+        if isOpaque {
+            finalImage = ciImage
+        } else {
+            // Make white background transparent using a color matrix:
+            // RGB output = 0 (black), Alpha = 1 - R (black pixels opaque, white pixels transparent)
+            let colorMatrixFilter = CIFilter(name: "CIColorMatrix")!
+            colorMatrixFilter.setValue(ciImage, forKey: kCIInputImageKey)
+            colorMatrixFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
+            colorMatrixFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
+            colorMatrixFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
+            colorMatrixFilter.setValue(CIVector(x: -1, y: 0, z: 0, w: 0), forKey: "inputAVector")
+            colorMatrixFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 1), forKey: "inputBiasVector")
+
+            guard let transparentImage = colorMatrixFilter.outputImage else {
+                throw .filterOutputFailed
+            }
+            finalImage = transparentImage
+        }
+
+        let scale = scaleFactor.rawValue
+        let scaledImage = finalImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
+            throw .pngConversionFailed
+        }
+
+        guard let pngData = UIImage(cgImage: cgImage).pngData() else {
             throw .pngConversionFailed
         }
 
