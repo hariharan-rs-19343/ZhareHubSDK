@@ -68,7 +68,7 @@ public extension PackageExtractionProtocol {
         let name = fileName ?? ""
         let render: () -> UIImage? = {
             MainActor.assumeIsolated {
-                LetterAvatar(name: name).image
+                LetterAvatarView.renderImage(name)
             }
         }
         let uiImage: UIImage? = Thread.isMainThread
