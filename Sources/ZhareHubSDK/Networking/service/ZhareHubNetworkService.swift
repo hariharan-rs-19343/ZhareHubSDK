@@ -9,12 +9,12 @@ import Foundation
 import Alamofire
 import SUICore
 
-open class ZhareHubNetworkService: @unchecked Sendable, NetworkServiceProtocol {
+public typealias ZhareHubDefaultNetworkService = ZhareHubNetworkService<ZHError>
+
+open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkServiceProtocol {
     
-    // Dictionary to store active upload requests with their identifiers
     private var activeUploads: [UUID: UploadRequest] = [:]
     
-    // Dictionary to store active download requests with their identifiers
     private var activeDownloads: [UUID: DownloadRequest] = [:]
     
     public init() {}
@@ -33,12 +33,20 @@ open class ZhareHubNetworkService: @unchecked Sendable, NetworkServiceProtocol {
             AF.request(request.path, method: request.method, parameters: request.queryParameters, encoding: request.encoding, headers: request.headers)
                 .validate()
                 .responseDecodable(of: T.self) {[weak self] response in
-                    do {
-                        try self?.validateHTTPResponse(response.response, error: response.error)
-                        let result = try response.result.get()
-                        continuation.resume(returning: result)
-                    }catch {
-                        continuation.resume(throwing: error)
+                    switch response.result {
+                    case .success(let value):
+                        continuation.resume(returning: value)
+                    case .failure:
+                        if let serverError = self?.decodeErrorBody(from: response.data) {
+                            continuation.resume(throwing: serverError)
+                        } else {
+                            do {
+                                try self?.validateHTTPResponse(response.response, error: response.error)
+                                continuation.resume(throwing: NetworkError.unknown)
+                            } catch {
+                                continuation.resume(throwing: error)
+                            }
+                        }
                     }
                 }
         }
@@ -65,12 +73,20 @@ open class ZhareHubNetworkService: @unchecked Sendable, NetworkServiceProtocol {
                 .responseDecodable(of: T.self) {[weak self] response in
                     self?.activeUploads.removeValue(forKey: uploadId)
                     
-                    do {
-                        try self?.validateHTTPResponse(response.response, error: response.error)
-                        let result = try response.result.get()
-                        continuation.resume(returning: result)
-                    }catch {
-                        continuation.resume(throwing: error)
+                    switch response.result {
+                    case .success(let value):
+                        continuation.resume(returning: value)
+                    case .failure:
+                        if let serverError = self?.decodeErrorBody(from: response.data) {
+                            continuation.resume(throwing: serverError)
+                        } else {
+                            do {
+                                try self?.validateHTTPResponse(response.response, error: response.error)
+                                continuation.resume(throwing: NetworkError.unknown)
+                            } catch {
+                                continuation.resume(throwing: error)
+                            }
+                        }
                     }
                 }
             
@@ -205,17 +221,10 @@ open class ZhareHubNetworkService: @unchecked Sendable, NetworkServiceProtocol {
     }
     
     open func validateHTTPResponse(_ httpResponse: HTTPURLResponse?, error afError: AFError?) throws {
-        if let afError = afError, afError.isExplicitlyCancelledError {
-            throw NetworkError.isExplicitlyCancelled
-        }
+        if let afError = afError, afError.isExplicitlyCancelledError { throw NetworkError.isExplicitlyCancelled }
+        guard let httpResponse else { throw NetworkError.invalidResponse }
         
-        guard let httpRequest = httpResponse else {
-            throw NetworkError.invalidResponse
-        }
-        
-        let statusCode = httpRequest.statusCode
-        
-        switch statusCode {
+        switch httpResponse.statusCode {
         case 200...299:
             return
         case 400:
@@ -223,15 +232,28 @@ open class ZhareHubNetworkService: @unchecked Sendable, NetworkServiceProtocol {
         case 401:
             throw NetworkError.userAuthenticationRequired
         case 403:
-            throw NetworkError.noPermissionToReadFile
+            throw NetworkError.forbidden
         case 404:
-            throw NetworkError.fileDoesNotExist
+            throw NetworkError.notFound
         case 408:
             throw NetworkError.timeout
+        case 409:
+            throw NetworkError.conflict
+        case 429:
+            throw NetworkError.tooManyRequests
         case 500:
+            throw NetworkError.internalServerError
+        case 502:
+            throw NetworkError.badGateWay
+        case 503:
             throw NetworkError.badServerResponse
         default:
-            throw URLError(.unknown)
+            throw NetworkError.unknown
         }
+    }
+    
+    private func decodeErrorBody(from data: Data?) -> Error? {
+        guard let data else { return nil }
+        return try? JSONDecoder().decode(E.self, from: data)
     }
 }
