@@ -36,7 +36,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
                     switch response.result {
                     case .success(let value):
                         continuation.resume(returning: value)
-                    case .failure:
+                    case .failure(let error):
                         if let serverError = self?.decodeErrorBody(from: response.data) {
                             continuation.resume(throwing: serverError)
                         } else {
@@ -76,7 +76,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
                     switch response.result {
                     case .success(let value):
                         continuation.resume(returning: value)
-                    case .failure:
+                    case .failure(let error):
                         if let serverError = self?.decodeErrorBody(from: response.data) {
                             continuation.resume(throwing: serverError)
                         } else {
