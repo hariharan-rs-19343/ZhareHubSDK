@@ -24,7 +24,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         cancelAllRequests()
     }
 
-    open func execute<T: Sendable>(request: NetworkRequestProtocol) async throws -> T where T : Decodable {
+    open func execute<T: Sendable>(request: NetworkRequestProtocol) async throws -> ZHNetworkResponse<T> where T : Decodable {
         guard ConnectionStatus.shared.isNetworkAvailable else {
             throw NetworkError.noNetworkAvailable
         }
@@ -35,13 +35,17 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
                 .responseDecodable(of: T.self) {[weak self] response in
                     switch response.result {
                     case .success(let value):
-                        continuation.resume(returning: value)
-                    case .failure(let error):
+                        continuation.resume(returning: ZHNetworkResponse(value: value, response: response.response, data: response.data))
+                    case .failure:
                         if let serverError = self?.decodeErrorBody(from: response.data) {
                             continuation.resume(throwing: serverError)
                         } else {
+                            guard let self else {
+                                continuation.resume(throwing: NetworkError.unknown)
+                                return
+                            }
                             do {
-                                try self?.validateHTTPResponse(response.response, error: response.error)
+                                try self.validateHTTPResponse(response.response, error: response.error)
                                 continuation.resume(throwing: NetworkError.unknown)
                             } catch {
                                 continuation.resume(throwing: error)
@@ -76,12 +80,16 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
                     switch response.result {
                     case .success(let value):
                         continuation.resume(returning: value)
-                    case .failure(let error):
+                    case .failure:
                         if let serverError = self?.decodeErrorBody(from: response.data) {
                             continuation.resume(throwing: serverError)
                         } else {
+                            guard let self else {
+                                continuation.resume(throwing: NetworkError.unknown)
+                                return
+                            }
                             do {
-                                try self?.validateHTTPResponse(response.response, error: response.error)
+                                try self.validateHTTPResponse(response.response, error: response.error)
                                 continuation.resume(throwing: NetworkError.unknown)
                             } catch {
                                 continuation.resume(throwing: error)
@@ -94,6 +102,29 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         }
     }
     
+    open func execute(request: NetworkRequestProtocol) async throws -> ZHNetworkResponse<Void> {
+        guard ConnectionStatus.shared.isNetworkAvailable else {
+            throw NetworkError.noNetworkAvailable
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            AF.request(request.path, method: request.method, parameters: request.queryParameters, encoding: request.encoding, headers: request.headers)
+                .validate()
+                .response { [weak self] response in
+                    guard let self else {
+                        continuation.resume(throwing: NetworkError.unknown)
+                        return
+                    }
+                    do {
+                        try self.validateHTTPResponse(response.response, error: response.error)
+                        continuation.resume(returning: ZHNetworkResponse(value: (), response: response.response, data: response.data))
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+        }
+    }
+
     open func upload(request: any NetworkRequestProtocol, progress: @escaping @Sendable (Double) -> Void) async throws -> Any? {
         guard ConnectionStatus.shared.isNetworkAvailable else {
             throw NetworkError.noNetworkAvailable
@@ -193,12 +224,21 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
                 .downloadProgress { progressValue in
                     progress(progressValue.fractionCompleted)
                 }
-                .responseData(completionHandler: { response in
+                .responseData(completionHandler: { [weak self] response in
                     switch response.result {
                     case .success(let downloadedData):
                         continuation.resume(returning: downloadedData)
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
+                    case .failure:
+                        guard let self else {
+                            continuation.resume(throwing: NetworkError.unknown)
+                            return
+                        }
+                        do {
+                            try self.validateHTTPResponse(response.response, error: response.error)
+                            continuation.resume(throwing: NetworkError.unknown)
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
                     }
                 })
             
