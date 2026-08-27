@@ -9,7 +9,7 @@ import Foundation
 import Alamofire
 import SUICore
 
-public typealias ZhareHubDefaultNetworkService = ZhareHubNetworkService<ZHError>
+public typealias ZhareHubDefaultNetworkService = ZhareHubNetworkService<ZHRequestErrorBody>
 
 open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkServiceProtocol {
     
@@ -116,11 +116,15 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
                 .response {[weak self] response in
                     self?.activeUploads.removeValue(forKey: uploadId)
                     
+                    guard let self else {
+                        continuation.resume(throwing: NetworkError.unknown)
+                        return
+                    }
                     do {
-                        try self?.validateHTTPResponse(response.response, error: response.error)
+                        try self.validateHTTPResponse(response.response, error: response.error)
                         let result = try response.result.get()
                         continuation.resume(returning: result)
-                    }catch {
+                    } catch {
                         continuation.resume(throwing: error)
                     }
                 }
@@ -152,15 +156,20 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
                 .downloadProgress { progressValue in
                     progress(progressValue.fractionCompleted)
                 }
-                .response { response in
-                    if let error = response.error {
-                        return continuation.resume(throwing: error)
+                .response { [weak self] response in
+                    guard let self else {
+                        continuation.resume(throwing: NetworkError.unknown)
+                        return
                     }
-                    
-                    if let fileURL = response.fileURL {
-                        continuation.resume(returning: fileURL)
-                    }else {
-                        continuation.resume(throwing: NetworkError.noDataAvailable)
+                    do {
+                        try self.validateHTTPResponse(response.response, error: response.error)
+                        if let fileURL = response.fileURL {
+                            continuation.resume(returning: fileURL)
+                        } else {
+                            continuation.resume(throwing: NetworkError.noDataAvailable)
+                        }
+                    } catch {
+                        continuation.resume(throwing: error)
                     }
                 }
                 
