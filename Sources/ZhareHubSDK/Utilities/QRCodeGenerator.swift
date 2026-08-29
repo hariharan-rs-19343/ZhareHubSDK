@@ -7,7 +7,8 @@
 
 import Foundation
 import CoreImage.CIFilterBuiltins
-import UIKit
+import ImageIO
+import UniformTypeIdentifiers
 
 /// A thread-safe utility for generating QR code images from string content.
 ///
@@ -24,8 +25,8 @@ import UIKit
 ///     correctionLevel: .high
 /// )
 ///
-/// // Convert to UIImage
-/// if let image = UIImage(data: pngData) {
+/// // Convert to a platform image (UIImage on iOS/watchOS/etc., NSImage on macOS)
+/// if let image = PlatformImage(data: pngData) {
 ///     imageView.image = image
 /// }
 /// ```
@@ -115,10 +116,19 @@ public enum QRCodeGenerator: Sendable {
         let scale = scaleFactor.rawValue
         let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
 
-        guard let pngData = UIImage(ciImage: scaledImage).pngData() else {
+        guard let cgImage = CIContext().createCGImage(scaledImage, from: scaledImage.extent) else {
+            throw .filterOutputFailed
+        }
+
+        guard let mutableData = CFDataCreateMutable(nil, 0),
+              let destination = CGImageDestinationCreateWithData(mutableData, UTType.png.identifier as CFString, 1, nil) else {
+            throw .pngConversionFailed
+        }
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        guard CGImageDestinationFinalize(destination) else {
             throw .pngConversionFailed
         }
 
-        return pngData
+        return mutableData as Data
     }
 }

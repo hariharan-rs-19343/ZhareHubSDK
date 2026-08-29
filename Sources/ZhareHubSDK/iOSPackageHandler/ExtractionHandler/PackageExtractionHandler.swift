@@ -90,7 +90,7 @@ public final class PackageExtractionHandler {
     // MARK: - PRIVATE HELPER METHODS
     private func resolveAppDirectory(from payloadPath: URL) throws -> URL? {
         // Check if payloadPath itself is an .app bundle
-        if payloadPath.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
+        if payloadPath.pathExtension.caseInsensitiveCompare(ZhareHubConstants.APP_FILE_EXTENSION) == .orderedSame {
             // macCatalyst .app bundles have Contents/ subdirectory
             let contentsDir = payloadPath.appending(component: "Contents")
             if fileManager.fileExists(atPath: contentsDir.path()) {
@@ -114,7 +114,7 @@ public final class PackageExtractionHandler {
         }
         
         for case let fileURL as URL in enumerator {
-            if fileURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
+            if fileURL.pathExtension.caseInsensitiveCompare(ZhareHubConstants.APP_FILE_EXTENSION) == .orderedSame {
                 enumerator.skipDescendants()
                 return fileURL
             }
@@ -126,7 +126,7 @@ public final class PackageExtractionHandler {
     /// Checks whether the given URL is an `.app` bundle and returns it if so.
     /// If the URL is a package, the enumerator skips its descendants.
     private func matchAppBundle(_ fileURL: URL) -> URL? {
-        guard fileURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame else {
+        guard fileURL.pathExtension.caseInsensitiveCompare(ZhareHubConstants.APP_FILE_EXTENSION) == .orderedSame else {
             return nil
         }
         

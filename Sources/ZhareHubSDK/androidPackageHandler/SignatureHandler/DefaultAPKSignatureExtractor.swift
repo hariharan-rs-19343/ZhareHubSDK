@@ -14,7 +14,7 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
     public init() {}
 
     public func extract(from apkPath: URL) -> APKSignatureInfo {
-        var signerDN: String = "N/A"
+        var signerDN: String = APKConstants.notAvailable
 
         // --- v1: META-INF/*.RSA/.DSA/.EC ---
         if let zip = APKZipReader(url: apkPath) {
@@ -33,7 +33,7 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
         }
 
         // --- v2 / v3: APK Signing Block ---
-        if signerDN == "N/A",
+        if signerDN == APKConstants.notAvailable,
            let certData = extractCertFromSigningBlock(at: apkPath),
            let der = certData.certificate,
            let cert = SecCertificateCreateWithData(nil, der as CFData) {
@@ -174,7 +174,7 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
         if let dn = extractDNFromPKCS7(pkcs7Data) {
             return dn
         }
-        return "N/A"
+        return APKConstants.notAvailable
     }
 
     private func extractDNFromPKCS7(_ data: Data) -> String? {
@@ -233,7 +233,7 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
             return summary
         }
 
-        return "N/A"
+        return APKConstants.notAvailable
     }
 
     private func parseSubjectDNFields(_ data: Data) -> [String: String]? {

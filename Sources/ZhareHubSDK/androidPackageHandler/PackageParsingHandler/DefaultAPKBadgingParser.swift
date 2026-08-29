@@ -14,10 +14,10 @@ public struct DefaultAPKBadgingParser: APKBadgingParserProtocol {
 
     public func parseAppLabel(from output: String) -> String {
         let pattern = "application-label:'([^']*)'"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return "N/A" }
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return APKConstants.notAvailable }
         let nsOutput = output as NSString
         guard let match = regex.firstMatch(in: output, range: NSRange(location: 0, length: nsOutput.length)),
-              match.numberOfRanges >= 2 else { return "N/A" }
+              match.numberOfRanges >= 2 else { return APKConstants.notAvailable }
         return nsOutput.substring(with: match.range(at: 1))
     }
 
@@ -33,7 +33,7 @@ public struct DefaultAPKBadgingParser: APKBadgingParserProtocol {
                 return nsOutput.substring(with: match.range(at: 1))
             }
         }
-        return "N/A"
+        return APKConstants.notAvailable
     }
 
     public func parseDeviceCompatibility(from output: String) -> [String] {

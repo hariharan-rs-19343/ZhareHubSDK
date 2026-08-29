@@ -8,7 +8,6 @@
 import Foundation
 import SUICore
 import UniformTypeIdentifiers
-import UIKit
 
 public final class ZipExtractionStrategy: PackageExtractionProtocol {
     private let archiveOperations: ArchiveOperationsProtocol

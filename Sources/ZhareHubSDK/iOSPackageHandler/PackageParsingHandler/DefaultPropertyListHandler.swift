@@ -165,9 +165,9 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
         var resolvedBundleVersion = bundleVersion
         
         if let content = content {
-            resolvedFileName = content["CFBundleName"] as? String
-            resolvedBundleIdentifier = content["CFBundleIdentifier"] as? String
-            resolvedBundleVersion = content["CFBundleShortVersionString"] as? String
+            resolvedFileName = content[BundleProperties.CodingKeys.bundleName.rawValue] as? String
+            resolvedBundleIdentifier = content[BundleProperties.CodingKeys.bundleIdentifier.rawValue] as? String
+            resolvedBundleVersion = content[BundleProperties.CodingKeys.bundleVersionShort.rawValue] as? String
         }
         
         guard let finalFileName = resolvedFileName,

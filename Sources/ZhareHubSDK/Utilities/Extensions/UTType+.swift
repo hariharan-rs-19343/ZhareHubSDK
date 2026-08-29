@@ -9,12 +9,12 @@
 import UniformTypeIdentifiers
 
 public extension UTType {
-    public static var ipa: UTType {
+    static var ipa: UTType {
         let bundleIdentifier = Bundle.main.bundleIdentifier
         return UTType(bundleIdentifier!) ?? UTType(filenameExtension: "ipa")!
     }
-    
-    public static var app: UTType {
+
+    static var app: UTType {
         let bundleIdentifier = "com.apple.application-file"
         return UTType(bundleIdentifier) ?? .application
     }

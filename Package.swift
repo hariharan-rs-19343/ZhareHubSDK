@@ -7,7 +7,8 @@ let package = Package(
     name: "ZhareHubSDK",
     platforms: [
         .iOS(.v26),
-        .macCatalyst(.v26)
+        .macCatalyst(.v26),
+        .macOS(.v26),
     ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.

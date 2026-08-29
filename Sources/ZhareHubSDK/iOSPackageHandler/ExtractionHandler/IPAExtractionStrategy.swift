@@ -8,7 +8,6 @@
 import Foundation
 import SUICore
 import UniformTypeIdentifiers
-import UIKit
 
 public final class IPAExtractionStrategy: PackageExtractionProtocol {
     private let archiveOperations: ArchiveOperationsProtocol

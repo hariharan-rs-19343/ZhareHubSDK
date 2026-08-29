@@ -4,7 +4,7 @@
 //
 
 import Foundation
-import UIKit
+import SUICore
 
 public enum APKIconExtractionStrategyKind: String, Sendable {
     case directPath
@@ -14,11 +14,11 @@ public enum APKIconExtractionStrategyKind: String, Sendable {
 }
 
 public struct APKIconResult: Sendable {
-    public let image: UIImage
+    public let image: PlatformImage
     public let strategy: APKIconExtractionStrategyKind
     public let sourcePath: String?
 
-    public init(image: UIImage, strategy: APKIconExtractionStrategyKind, sourcePath: String?) {
+    public init(image: PlatformImage, strategy: APKIconExtractionStrategyKind, sourcePath: String?) {
         self.image = image
         self.strategy = strategy
         self.sourcePath = sourcePath

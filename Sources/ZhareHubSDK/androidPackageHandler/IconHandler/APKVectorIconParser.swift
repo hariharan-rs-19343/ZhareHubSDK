@@ -8,8 +8,8 @@
 //
 
 import Foundation
-import UIKit
 import CoreGraphics
+import SUICore
 
 // MARK: - Android Path Data Tokenizer & Parser
 
@@ -298,8 +298,8 @@ struct VectorDrawable {
 
     struct VectorPath {
         var pathData: String = ""
-        var fillColor: UIColor?
-        var strokeColor: UIColor?
+        var fillColor: PlatformColor?
+        var strokeColor: PlatformColor?
         var strokeWidth: CGFloat = 0
         var fillAlpha: CGFloat = 1
         var strokeAlpha: CGFloat = 1
@@ -315,6 +315,48 @@ struct VectorDrawable {
         var pivotX: CGFloat = 0
         var pivotY: CGFloat = 0
         var elements: [Element] = []
+    }
+}
+
+// MARK: - VectorDrawable / Adaptive-Icon XML Names
+
+/// Android VectorDrawable / adaptive-icon XML tag and attribute names, as
+/// emitted by `aapt2 dump xmltree`. Centralized here since these are used as
+/// dictionary/XML-attribute keys with no compiler safety net against typos.
+enum VectorDrawableXML {
+    enum Tag: String {
+        case vector
+        case path
+        case group
+        case adaptiveIcon = "adaptive-icon"
+        case background
+        case foreground
+        case inset
+        case color
+        case drawable
+    }
+
+    enum Attribute: String {
+        case viewportWidth
+        case viewportHeight
+        case width
+        case height
+        case pathData
+        case fillColor
+        case strokeColor
+        case strokeWidth
+        case fillAlpha
+        case strokeAlpha
+        case fillType
+        case translateX
+        case translateY
+        case scaleX
+        case scaleY
+        case rotation
+        case pivotX
+        case pivotY
+        case drawable
+        case color
     }
 }
 
@@ -395,12 +437,12 @@ struct XmlTreeParser {
     }
 
     static func parseVectorDrawable(from root: XmlNode) -> VectorDrawable? {
-        guard root.tag == "vector" else { return nil }
+        guard root.tag == VectorDrawableXML.Tag.vector.rawValue else { return nil }
         var vd = VectorDrawable()
-        vd.viewportWidth = parseDimension(root.attributes["viewportWidth"]) ?? 24
-        vd.viewportHeight = parseDimension(root.attributes["viewportHeight"]) ?? 24
-        vd.width = parseDimension(root.attributes["width"]) ?? vd.viewportWidth
-        vd.height = parseDimension(root.attributes["height"]) ?? vd.viewportHeight
+        vd.viewportWidth = parseDimension(root.attributes[VectorDrawableXML.Attribute.viewportWidth.rawValue]) ?? 24
+        vd.viewportHeight = parseDimension(root.attributes[VectorDrawableXML.Attribute.viewportHeight.rawValue]) ?? 24
+        vd.width = parseDimension(root.attributes[VectorDrawableXML.Attribute.width.rawValue]) ?? vd.viewportWidth
+        vd.height = parseDimension(root.attributes[VectorDrawableXML.Attribute.height.rawValue]) ?? vd.viewportHeight
         vd.elements = parseElements(root.children)
         return vd
     }
@@ -409,25 +451,25 @@ struct XmlTreeParser {
         var elements: [VectorDrawable.Element] = []
         for node in nodes {
             switch node.tag {
-            case "path":
+            case VectorDrawableXML.Tag.path.rawValue:
                 var vp = VectorDrawable.VectorPath()
-                vp.pathData = node.attributes["pathData"] ?? ""
-                vp.fillColor = parseColor(node.attributes["fillColor"])
-                vp.strokeColor = parseColor(node.attributes["strokeColor"])
-                vp.strokeWidth = parseDimension(node.attributes["strokeWidth"]) ?? 0
-                vp.fillAlpha = parseDimension(node.attributes["fillAlpha"]) ?? 1
-                vp.strokeAlpha = parseDimension(node.attributes["strokeAlpha"]) ?? 1
-                if node.attributes["fillType"] == "evenOdd" { vp.fillType = .evenOdd }
+                vp.pathData = node.attributes[VectorDrawableXML.Attribute.pathData.rawValue] ?? ""
+                vp.fillColor = parseColor(node.attributes[VectorDrawableXML.Attribute.fillColor.rawValue])
+                vp.strokeColor = parseColor(node.attributes[VectorDrawableXML.Attribute.strokeColor.rawValue])
+                vp.strokeWidth = parseDimension(node.attributes[VectorDrawableXML.Attribute.strokeWidth.rawValue]) ?? 0
+                vp.fillAlpha = parseDimension(node.attributes[VectorDrawableXML.Attribute.fillAlpha.rawValue]) ?? 1
+                vp.strokeAlpha = parseDimension(node.attributes[VectorDrawableXML.Attribute.strokeAlpha.rawValue]) ?? 1
+                if node.attributes[VectorDrawableXML.Attribute.fillType.rawValue] == "evenOdd" { vp.fillType = .evenOdd }
                 elements.append(.path(vp))
-            case "group":
+            case VectorDrawableXML.Tag.group.rawValue:
                 var vg = VectorDrawable.VectorGroup()
-                vg.translateX = parseDimension(node.attributes["translateX"]) ?? 0
-                vg.translateY = parseDimension(node.attributes["translateY"]) ?? 0
-                vg.scaleX = parseDimension(node.attributes["scaleX"]) ?? 1
-                vg.scaleY = parseDimension(node.attributes["scaleY"]) ?? 1
-                vg.rotation = parseDimension(node.attributes["rotation"]) ?? 0
-                vg.pivotX = parseDimension(node.attributes["pivotX"]) ?? 0
-                vg.pivotY = parseDimension(node.attributes["pivotY"]) ?? 0
+                vg.translateX = parseDimension(node.attributes[VectorDrawableXML.Attribute.translateX.rawValue]) ?? 0
+                vg.translateY = parseDimension(node.attributes[VectorDrawableXML.Attribute.translateY.rawValue]) ?? 0
+                vg.scaleX = parseDimension(node.attributes[VectorDrawableXML.Attribute.scaleX.rawValue]) ?? 1
+                vg.scaleY = parseDimension(node.attributes[VectorDrawableXML.Attribute.scaleY.rawValue]) ?? 1
+                vg.rotation = parseDimension(node.attributes[VectorDrawableXML.Attribute.rotation.rawValue]) ?? 0
+                vg.pivotX = parseDimension(node.attributes[VectorDrawableXML.Attribute.pivotX.rawValue]) ?? 0
+                vg.pivotY = parseDimension(node.attributes[VectorDrawableXML.Attribute.pivotY.rawValue]) ?? 0
                 vg.elements = parseElements(node.children)
                 elements.append(.group(vg))
             default:
@@ -445,7 +487,7 @@ struct XmlTreeParser {
         return Double(str).map { CGFloat($0) }
     }
 
-    static func parseColor(_ value: String?) -> UIColor? {
+    static func parseColor(_ value: String?) -> PlatformColor? {
         guard let value = value?.trimmingCharacters(in: .whitespaces), value.hasPrefix("#") else { return nil }
         let hex = String(value.dropFirst())
         var rgba: UInt64 = 0
@@ -475,7 +517,7 @@ struct XmlTreeParser {
         default:
             return nil
         }
-        return UIColor(red: r, green: g, blue: b, alpha: a)
+        return PlatformColor(red: r, green: g, blue: b, alpha: a)
     }
 }
 
@@ -484,7 +526,7 @@ struct XmlTreeParser {
 struct VectorDrawableRenderer {
 
     @MainActor
-    static func render(_ drawable: VectorDrawable, size: CGSize? = nil) -> UIImage? {
+    static func render(_ drawable: VectorDrawable, size: CGSize? = nil) -> PlatformImage? {
         let outputSize = size ?? CGSize(width: drawable.width, height: drawable.height)
         guard outputSize.width > 0, outputSize.height > 0 else { return nil }
 
@@ -493,9 +535,7 @@ struct VectorDrawableRenderer {
             height: max(outputSize.height, 192)
         )
 
-        let renderer = UIGraphicsImageRenderer(size: renderSize)
-        return renderer.image { ctx in
-            let cgCtx = ctx.cgContext
+        return PlatformImage.rendered(size: renderSize) { cgCtx in
             let scaleX = renderSize.width / drawable.viewportWidth
             let scaleY = renderSize.height / drawable.viewportHeight
             cgCtx.scaleBy(x: scaleX, y: scaleY)
@@ -530,7 +570,7 @@ struct VectorDrawableRenderer {
             ctx.strokePath()
         }
         if vPath.fillColor == nil && (vPath.strokeColor == nil || vPath.strokeWidth <= 0) {
-            ctx.setFillColor(UIColor.black.cgColor)
+            ctx.setFillColor(PlatformColor.black.cgColor)
             ctx.addPath(cgPath)
             ctx.fillPath(using: vPath.fillType)
         }
@@ -550,7 +590,7 @@ struct VectorDrawableRenderer {
 
 // MARK: - Vector Icon Parser (top-level)
 
-/// Resolves Android vector / adaptive-icon XML inside an APK to a `UIImage`,
+/// Resolves Android vector / adaptive-icon XML inside an APK to a `PlatformImage`,
 /// using `aapt2 dump xmltree` and `aapt2 dump resources` via an injected shell.
 ///
 /// Marked `@unchecked Sendable` because instances are only used sequentially
@@ -569,16 +609,16 @@ final class APKVectorIconParser: @unchecked Sendable {
 
     func renderIcon(from apkPath: URL,
                     iconXmlPath: String,
-                    outputSize: CGSize = CGSize(width: 192, height: 192)) async -> UIImage? {
+                    outputSize: CGSize = CGSize(width: 192, height: 192)) async -> PlatformImage? {
         guard let xmlOutput = await dumpXmlTree(apkPath: apkPath, filePath: iconXmlPath),
               let root = XmlTreeParser.parse(xmlOutput) else {
             return nil
         }
 
         switch root.tag {
-        case "adaptive-icon":
+        case VectorDrawableXML.Tag.adaptiveIcon.rawValue:
             return await renderAdaptiveIcon(root, apkPath: apkPath, outputSize: outputSize)
-        case "vector":
+        case VectorDrawableXML.Tag.vector.rawValue:
             return await renderVector(root, outputSize: outputSize)
         default:
             return nil
@@ -589,15 +629,15 @@ final class APKVectorIconParser: @unchecked Sendable {
 
     private func renderAdaptiveIcon(_ root: XmlTreeParser.XmlNode,
                                     apkPath: URL,
-                                    outputSize: CGSize) async -> UIImage? {
-        var backgroundImage: UIImage?
-        var foregroundImage: UIImage?
+                                    outputSize: CGSize) async -> PlatformImage? {
+        var backgroundImage: PlatformImage?
+        var foregroundImage: PlatformImage?
 
         for child in root.children {
             switch child.tag {
-            case "background":
+            case VectorDrawableXML.Tag.background.rawValue:
                 backgroundImage = await resolveLayer(child, apkPath: apkPath, outputSize: outputSize)
-            case "foreground":
+            case VectorDrawableXML.Tag.foreground.rawValue:
                 foregroundImage = await resolveLayer(child, apkPath: apkPath, outputSize: outputSize)
             default:
                 break
@@ -609,22 +649,22 @@ final class APKVectorIconParser: @unchecked Sendable {
 
     private func resolveLayer(_ node: XmlTreeParser.XmlNode,
                               apkPath: URL,
-                              outputSize: CGSize) async -> UIImage? {
-        if let colorStr = node.attributes["drawable"], colorStr.hasPrefix("#"),
+                              outputSize: CGSize) async -> PlatformImage? {
+        if let colorStr = node.attributes[VectorDrawableXML.Attribute.drawable.rawValue], colorStr.hasPrefix("#"),
            let color = XmlTreeParser.parseColor(colorStr) {
             return await solidColorImage(color: color, size: outputSize)
         }
-        if let drawableRef = node.attributes["drawable"],
+        if let drawableRef = node.attributes[VectorDrawableXML.Attribute.drawable.rawValue],
            let image = await resolveDrawableReference(drawableRef, apkPath: apkPath, outputSize: outputSize) {
             return image
         }
         for child in node.children {
-            if child.tag == "vector" {
+            if child.tag == VectorDrawableXML.Tag.vector.rawValue {
                 return await renderVector(child, outputSize: outputSize)
-            } else if child.tag == "inset" {
+            } else if child.tag == VectorDrawableXML.Tag.inset.rawValue {
                 return await resolveLayer(child, apkPath: apkPath, outputSize: outputSize)
-            } else if child.tag == "color" || child.tag == "drawable" {
-                if let colorStr = child.attributes["color"] ?? child.attributes["drawable"],
+            } else if child.tag == VectorDrawableXML.Tag.color.rawValue || child.tag == VectorDrawableXML.Tag.drawable.rawValue {
+                if let colorStr = child.attributes[VectorDrawableXML.Attribute.color.rawValue] ?? child.attributes[VectorDrawableXML.Attribute.drawable.rawValue],
                    let color = XmlTreeParser.parseColor(colorStr) {
                     return await solidColorImage(color: color, size: outputSize)
                 }
@@ -635,7 +675,7 @@ final class APKVectorIconParser: @unchecked Sendable {
 
     private func resolveResourceId(_ ref: String,
                                    apkPath: URL,
-                                   outputSize: CGSize) async -> UIImage? {
+                                   outputSize: CGSize) async -> PlatformImage? {
         let cleanRef = ref.replacingOccurrences(of: "@", with: "")
         guard let dump = await dumpResources(apkPath: apkPath) else { return nil }
 
@@ -649,7 +689,7 @@ final class APKVectorIconParser: @unchecked Sendable {
             if foundResource {
                 if line.contains("resource ") { break }
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if let resRange = trimmed.range(of: "res/") {
+                if let resRange = trimmed.range(of: APKConstants.resourcePrefix) {
                     var path = String(trimmed[resRange.lowerBound...])
                     if let typeRange = path.range(of: " type=") {
                         path = String(path[..<typeRange.lowerBound])
@@ -676,7 +716,7 @@ final class APKVectorIconParser: @unchecked Sendable {
 
         if let zip = APKZipReader(url: apkPath) {
             for path in candidatePaths.reversed() where !path.hasSuffix(".xml") {
-                if let data = zip.extractEntry(path: path), let image = UIImage(data: data) {
+                if let data = zip.extractEntry(path: path), let image = PlatformImage(data: data) {
                     return image
                 }
             }
@@ -687,17 +727,17 @@ final class APKVectorIconParser: @unchecked Sendable {
 
     private func resolveDrawableReference(_ ref: String,
                                           apkPath: URL,
-                                          outputSize: CGSize) async -> UIImage? {
+                                          outputSize: CGSize) async -> PlatformImage? {
         if ref.hasPrefix("@") {
             return await resolveResourceId(ref, apkPath: apkPath, outputSize: outputSize)
         }
-        if ref.hasPrefix("res/") {
+        if ref.hasPrefix(APKConstants.resourcePrefix) {
             if ref.hasSuffix(".xml") {
                 return await renderIcon(from: apkPath, iconXmlPath: ref)
             }
             if let zip = APKZipReader(url: apkPath),
                let data = zip.extractEntry(path: ref) {
-                return UIImage(data: data)
+                return PlatformImage(data: data)
             }
         }
         return nil
@@ -705,7 +745,7 @@ final class APKVectorIconParser: @unchecked Sendable {
 
     // MARK: - Vector
 
-    private func renderVector(_ root: XmlTreeParser.XmlNode, outputSize: CGSize) async -> UIImage? {
+    private func renderVector(_ root: XmlTreeParser.XmlNode, outputSize: CGSize) async -> PlatformImage? {
         guard let drawable = XmlTreeParser.parseVectorDrawable(from: root) else { return nil }
         return await MainActor.run {
             VectorDrawableRenderer.render(drawable, size: outputSize)
@@ -715,15 +755,13 @@ final class APKVectorIconParser: @unchecked Sendable {
     // MARK: - Compositing
 
     @MainActor
-    private func composite(background: UIImage?, foreground: UIImage?, size: CGSize) -> UIImage? {
+    private func composite(background: PlatformImage?, foreground: PlatformImage?, size: CGSize) -> PlatformImage? {
         guard background != nil || foreground != nil else { return nil }
 
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { ctx in
+        return PlatformImage.rendered(size: size) { cgCtx in
             let rect = CGRect(origin: .zero, size: size)
-            let cgCtx = ctx.cgContext
 
-            cgCtx.addPath(adaptiveIconMask(in: rect))
+            cgCtx.addPath(self.adaptiveIconMask(in: rect))
             cgCtx.clip()
 
             background?.draw(in: rect)
@@ -752,9 +790,8 @@ final class APKVectorIconParser: @unchecked Sendable {
     }
 
     @MainActor
-    private func solidColorImage(color: UIColor, size: CGSize) -> UIImage {
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { ctx in
+    private func solidColorImage(color: PlatformColor, size: CGSize) -> PlatformImage {
+        PlatformImage.rendered(size: size) { ctx in
             color.setFill()
             ctx.fill(CGRect(origin: .zero, size: size))
         }
@@ -765,7 +802,7 @@ final class APKVectorIconParser: @unchecked Sendable {
     private func dumpXmlTree(apkPath: URL, filePath: String) async -> String? {
         let result = try? await shell.run(
             executablePath: aapt2Path,
-            arguments: ["dump", "xmltree", apkPath.path, "--file", filePath],
+            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.xmltree.rawValue, apkPath.path, APKConstants.AAPT2.fileFlag, filePath],
             environment: nil,
             workingDirectory: nil,
             timeout: 30
@@ -779,7 +816,7 @@ final class APKVectorIconParser: @unchecked Sendable {
         if let cached = resourceDumpCache[key] { return cached }
         let result = try? await shell.run(
             executablePath: aapt2Path,
-            arguments: ["dump", "resources", apkPath.path],
+            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.resources.rawValue, apkPath.path],
             environment: nil,
             workingDirectory: nil,
             timeout: 15

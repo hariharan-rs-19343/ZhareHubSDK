@@ -1,5 +1,5 @@
 {
-  "originHash" : "0c5dd396f01b2663562825eabb54fafb69e398b6aa7fea59fd67ceaa17bbe9b5",
+  "originHash" : "e500c7b6beb6f3c29f033ba711b2e2f1f4cc785c94ff9c97dfafab02ae8047fb",
   "pins" : [
     {
       "identity" : "alamofire",
@@ -16,7 +16,7 @@
       "location" : "https://github.com/hariharan-rs-19343/SUICore.git",
       "state" : {
         "branch" : "main",
-        "revision" : "b443c320c50cb2dbe9f5d2186eb4794715488b43"
+        "revision" : "92b16f69fe305cca278c8724aaeb5a346f57efbd"
       }
     },
     {

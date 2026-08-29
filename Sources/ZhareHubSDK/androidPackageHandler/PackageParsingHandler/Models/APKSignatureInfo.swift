@@ -14,5 +14,5 @@ public struct APKSignatureInfo: Hashable, Sendable {
         self.signer = signer
     }
 
-    public static let unknown = APKSignatureInfo(signer: "N/A")
+    public static let unknown = APKSignatureInfo(signer: APKConstants.notAvailable)
 }

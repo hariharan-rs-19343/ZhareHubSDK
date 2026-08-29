@@ -19,7 +19,7 @@ public final class APKExtractionStrategy: APKExtractionProtocol {
     public init() {}
 
     public func canHandle(url: URL) -> Bool {
-        url.pathExtension.caseInsensitiveCompare(ZHConstants.APK_FILE_EXTENSION) == .orderedSame
+        url.pathExtension.caseInsensitiveCompare(ZhareHubConstants.APK_FILE_EXTENSION) == .orderedSame
     }
 
     public func extractMetadata(
@@ -39,7 +39,7 @@ public final class APKExtractionStrategy: APKExtractionProtocol {
         // 1. aapt2 dump badging
         let badgingResult = try await shell.run(
             executablePath: aapt2Path,
-            arguments: ["dump", "badging", apkURL.path],
+            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.badging.rawValue, apkURL.path],
             environment: nil,
             workingDirectory: nil,
             timeout: 30

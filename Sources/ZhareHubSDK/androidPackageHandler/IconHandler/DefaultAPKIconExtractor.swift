@@ -16,7 +16,7 @@
 //
 
 import Foundation
-import UIKit
+import SUICore
 
 public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
 
@@ -37,7 +37,7 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
         // 1. Direct raster
         if let relPath = iconPath, !relPath.hasSuffix(".xml"),
            let data = zip.extractEntry(path: relPath),
-           let image = UIImage(data: data) {
+           let image = PlatformImage(data: data) {
             return APKIconResult(image: image, strategy: .directPath, sourcePath: relPath)
         }
 
@@ -88,10 +88,10 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
         shell: ShellExecutorProtocol,
         aapt2Path: String,
         zip: APKZipReader
-    ) async -> (UIImage, String)? {
+    ) async -> (PlatformImage, String)? {
         guard let xmlOut = try? await shell.run(
             executablePath: aapt2Path,
-            arguments: ["dump", "xmltree", apkPath.path, "--file", iconXml],
+            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.xmltree.rawValue, apkPath.path, APKConstants.AAPT2.fileFlag, iconXml],
             environment: nil, workingDirectory: nil, timeout: 30
         ), !xmlOut.output.isEmpty else { return nil }
 
@@ -105,7 +105,7 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
 
         guard let resOut = try? await shell.run(
             executablePath: aapt2Path,
-            arguments: ["dump", "resources", apkPath.path],
+            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.resources.rawValue, apkPath.path],
             environment: nil, workingDirectory: nil, timeout: 15
         ), !resOut.output.isEmpty else { return nil }
 
@@ -116,7 +116,7 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
             if foundResource {
                 if line.contains("resource ") { break }
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if let resRange = trimmed.range(of: "res/") {
+                if let resRange = trimmed.range(of: APKConstants.resourcePrefix) {
                     var path = String(trimmed[resRange.lowerBound...])
                     if let typeRange = path.range(of: " type=") {
                         path = String(path[..<typeRange.lowerBound])
@@ -129,7 +129,7 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
         }
 
         for path in pngPaths.reversed() {
-            if let data = zip.extractEntry(path: path), let image = UIImage(data: data) {
+            if let data = zip.extractEntry(path: path), let image = PlatformImage(data: data) {
                 return (image, path)
             }
         }
@@ -138,7 +138,7 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
 
     // MARK: - Strategy 3
 
-    private func extractByDensityScan(from zip: APKZipReader) -> (UIImage, String)? {
+    private func extractByDensityScan(from zip: APKZipReader) -> (PlatformImage, String)? {
         let candidates = zip.entries.filter { entry in
             let p = entry.path.lowercased()
             return (p.hasPrefix("res/mipmap-") || p.hasPrefix("res/drawable-")) &&
@@ -148,7 +148,7 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
 
         for entry in candidates {
             if let data = zip.extractEntry(path: entry.path),
-               let image = UIImage(data: data) {
+               let image = PlatformImage(data: data) {
                 return (image, entry.path)
             }
         }
@@ -157,24 +157,24 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
 
     // MARK: - Strategy 4
 
-    private func extractBestSquarePNG(from zip: APKZipReader) -> (UIImage, String)? {
+    private func extractBestSquarePNG(from zip: APKZipReader) -> (PlatformImage, String)? {
         let candidates = zip.entries.filter { entry in
             let p = entry.path.lowercased()
-            return p.hasPrefix("res/") &&
+            return p.hasPrefix(APKConstants.resourcePrefix) &&
                    (p.hasSuffix(".png") || p.hasSuffix(".webp")) &&
                    !p.contains(".9.") &&
                    entry.uncompressedSize >= 1000 && entry.uncompressedSize <= 30000
         }.sorted { $0.uncompressedSize > $1.uncompressedSize }
 
-        var bestImage: UIImage?
+        var bestImage: PlatformImage?
         var bestPixels = 0
         var bestPath: String?
 
         for entry in candidates.prefix(30) {
             guard let data = zip.extractEntry(path: entry.path),
-                  let img = UIImage(data: data) else { continue }
-            let w = Int(img.size.width * img.scale)
-            let h = Int(img.size.height * img.scale)
+                  let img = PlatformImage(data: data) else { continue }
+            let w = Int(img.pixelSize.width)
+            let h = Int(img.pixelSize.height)
             guard w > 0, h > 0 else { continue }
 
             let ratio = CGFloat(max(w, h)) / CGFloat(min(w, h))

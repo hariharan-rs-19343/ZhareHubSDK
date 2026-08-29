@@ -12,7 +12,7 @@ public extension Bundle {
         return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
     }
     
-    public enum ApplicationCategory: String, CaseIterable {
+    enum ApplicationCategory: String, CaseIterable {
         case business = "public.app-category.business"
         case developerTools = "public.app-category.developer-tools"
         case education = "public.app-category.education"

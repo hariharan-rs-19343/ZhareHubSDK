@@ -59,34 +59,34 @@ public struct BundleProperties: Decodable, Identifiable, Hashable {
     }
     
     public init?(from dictionary: [String: Any]) {
-        self.bundleName = dictionary["CFBundleName"] as? String
-        self.bundleVersionShort = dictionary["CFBundleShortVersionString"] as? String
-        self.bundleVersion = dictionary["CFBundleVersion"] as? String
-        self.bundleIdentifier = dictionary["CFBundleIdentifier"] as? String
-        self.minimumOSVersion = dictionary["MinimumOSVersion"] as? String
-        self.requiredDeviceCompability = dictionary["UIRequiredDeviceCapabilities"] as? [String]
-        self.supportedPlatform = dictionary["CFBundleSupportedPlatforms"] as? [String]
-        
+        self.bundleName = dictionary[CodingKeys.bundleName.rawValue] as? String
+        self.bundleVersionShort = dictionary[CodingKeys.bundleVersionShort.rawValue] as? String
+        self.bundleVersion = dictionary[CodingKeys.bundleVersion.rawValue] as? String
+        self.bundleIdentifier = dictionary[CodingKeys.bundleIdentifier.rawValue] as? String
+        self.minimumOSVersion = dictionary[CodingKeys.minimumOSVersion.rawValue] as? String
+        self.requiredDeviceCompability = dictionary[CodingKeys.requiredDeviceCompability.rawValue] as? [String]
+        self.supportedPlatform = dictionary[CodingKeys.supportedPlatform.rawValue] as? [String]
+
         // Extract bundle icon
-        if let bundleIcons = dictionary["CFBundleIcons"] as? [String: Any],
-           let primaryIcon = bundleIcons["CFBundlePrimaryIcon"] as? [String: Any],
-           let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String] {
+        if let bundleIcons = dictionary[CodingKeys.bundleIcon.rawValue] as? [String: Any],
+           let primaryIcon = bundleIcons[BundleIcon.CodingKeys.primaryIcon.rawValue] as? [String: Any],
+           let iconFiles = primaryIcon[BundleIcon.PrimaryIcon.CodingKeys.iconFiles.rawValue] as? [String] {
             self.bundleIcon = iconFiles.first
         } else {
             self.bundleIcon = nil
         }
-        
+
         // Extract redirect URL
-        if let urlTypes = dictionary["CFBundleURLTypes"] as? [[String: Any]],
+        if let urlTypes = dictionary[CodingKeys.redirectURL.rawValue] as? [[String: Any]],
            let firstURLType = urlTypes.first {
-            self.redirectURL = (firstURLType["CFBundleURLName"] as? String) ??
-                               (firstURLType["CFBundleURLSchemes"] as? [String])?.first
+            self.redirectURL = (firstURLType[BundleURLTypes.CodingKeys.urlIdentifier.rawValue] as? String) ??
+                               (firstURLType[BundleURLTypes.CodingKeys.urlScheme.rawValue] as? [String])?.first
         } else {
             self.redirectURL = nil
         }
-        
+
         // Extract app category
-        if let categoryString = dictionary["LSApplicationCategoryType"] as? String,
+        if let categoryString = dictionary[CodingKeys.appCategory.rawValue] as? String,
            let category = Bundle.ApplicationCategory(rawValue: categoryString) {
             self.appCategory = category
         } else {

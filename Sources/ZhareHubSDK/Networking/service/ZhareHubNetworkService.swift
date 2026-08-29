@@ -16,7 +16,9 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
     private var activeUploads: [UUID: UploadRequest] = [:]
     
     private var activeDownloads: [UUID: DownloadRequest] = [:]
-    
+
+    private static var invalidRequestMessage: String { "Invalid Request" }
+
     public init() {}
     
     deinit {
@@ -62,7 +64,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         }
         
         guard let body = request.body else {
-            throw NetworkError.custom("Invalid Request", nil)
+            throw NetworkError.custom(Self.invalidRequestMessage, nil)
         }
         
         let uploadId: UUID = UUID()
@@ -131,7 +133,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         }
         
         guard let body = request.body else {
-            throw NetworkError.custom("Invalid Request", nil)
+            throw NetworkError.custom(Self.invalidRequestMessage, nil)
         }
         
         let uploadId = UUID()

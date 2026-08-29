@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import UIKit
 import SUICore
 
 /// Each package type implements this protocol with its own extraction logic.
@@ -36,7 +35,7 @@ public protocol PackageExtractionProtocol {
 public extension PackageExtractionProtocol {
     
     func extractInfoPlistData(from appDirectory: URL) throws -> Data {
-        let plistPath = appDirectory.appending(component: ZHConstants.INFO_PLIST).path()
+        let plistPath = appDirectory.appending(component: ZhareHubConstants.INFO_PLIST).path()
         let cleanPath = plistPath.removingPercentEncoding ?? plistPath
         guard FileManager.default.fileExists(atPath: cleanPath) else {
             throw FileConversionError.invalidFilePath
@@ -45,7 +44,7 @@ public extension PackageExtractionProtocol {
     }
     
     func extractMobileProvision(from appDirectory: URL) throws -> Data? {
-        let provisionPath = appDirectory.appending(component: ZHConstants.EMBEDDED_MOBILE_PROVISION).path()
+        let provisionPath = appDirectory.appending(component: ZhareHubConstants.EMBEDDED_MOBILE_PROVISION).path()
         let cleanPath = provisionPath.removingPercentEncoding ?? provisionPath
         guard FileManager.default.fileExists(atPath: cleanPath) else {
             return nil
@@ -61,17 +60,17 @@ public extension PackageExtractionProtocol {
         guard let props = parser.loadBundleProperties(with: dict) else {
             throw FileConversionError.custom("Failed to load bundle properties")
         }
-        return props.bundleIcon ?? "AppIcon"
+        return props.bundleIcon ?? ZhareHubConstants.DEFAULT_ICON_NAME
     }
     
     func generateDefaultAppIconData(fileName: String?) -> Data? {
         let name = fileName ?? ""
-        let render: () -> UIImage? = {
+        let render: () -> PlatformImage? = {
             MainActor.assumeIsolated {
                 LetterAvatarView.renderImage(name)
             }
         }
-        let uiImage: UIImage? = Thread.isMainThread
+        let uiImage: PlatformImage? = Thread.isMainThread
             ? render()
             : DispatchQueue.main.sync(execute: render)
         return uiImage?.pngData()

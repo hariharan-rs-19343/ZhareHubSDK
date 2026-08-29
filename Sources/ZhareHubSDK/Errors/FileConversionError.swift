@@ -5,7 +5,7 @@
 //  Created by Hariharan R S on 11/02/26.
 //
 
-import UIKit
+import Foundation
 
 public enum FileConversionError: ErrorProtocol {
         case invalidFilePath
