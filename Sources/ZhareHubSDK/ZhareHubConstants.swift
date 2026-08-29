@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum ZhareHubConstants {
+public enum ZhareHubConstants {
 
     // FILE AND FOLDER NAME
     static let PAYLOAD: String = "Payload"
