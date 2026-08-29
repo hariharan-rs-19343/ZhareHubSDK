@@ -9,7 +9,7 @@ import Foundation
 
 public struct ZHRequestErrorBody: ZHErrorBody, LocalizedError {
     public private(set) var statusCode: String
-    public private(set) var resourceName: String
+    public private(set) var resourceName: String?
     public private(set) var error: ErrorBody?
     
     enum CodingKeys: String, CodingKey {
@@ -22,7 +22,7 @@ public struct ZHRequestErrorBody: ZHErrorBody, LocalizedError {
         error?.message
     }
     
-    public struct ErrorBody: Decodable {
+    public struct ErrorBody: Decodable, Sendable {
         public private(set) var code: String
         public private(set) var message: String
         

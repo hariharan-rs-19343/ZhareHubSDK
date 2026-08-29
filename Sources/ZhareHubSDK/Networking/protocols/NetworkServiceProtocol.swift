@@ -9,7 +9,7 @@ import Foundation
 
 
 public protocol NetworkServiceProtocol {
-    func execute<T: Sendable>(request: NetworkRequestProtocol) async throws -> ZHNetworkResponse<T> where T: Decodable
+    func execute<T>(request: NetworkRequestProtocol) async throws -> ZHNetworkResponse<T> where T: Decodable
     func execute(request: NetworkRequestProtocol) async throws -> ZHNetworkResponse<Void>
     func download(request: NetworkRequestProtocol, progress: @escaping @Sendable (Double) -> Void) async throws -> Data
     func download(request: NetworkRequestProtocol, progress: @escaping @Sendable (Double) -> Void) async throws -> URL

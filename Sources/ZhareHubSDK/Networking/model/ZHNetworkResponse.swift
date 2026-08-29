@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct ZHNetworkResponse<T: Sendable>: Sendable {
+public struct ZHNetworkResponse<T> {
     private let value: T
     private let httpResponse: HTTPURLResponse?
     private let rawData: Data?
@@ -24,3 +24,5 @@ public struct ZHNetworkResponse<T: Sendable>: Sendable {
     public func getData() -> Data? { rawData }
     public func getResponse() -> HTTPURLResponse? { httpResponse }
 }
+
+extension ZHNetworkResponse: Sendable where T: Sendable {}
