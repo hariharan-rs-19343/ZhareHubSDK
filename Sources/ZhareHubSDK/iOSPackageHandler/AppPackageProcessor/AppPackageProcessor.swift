@@ -37,7 +37,7 @@ public final class AppPackageProcessor: PackageProcessorProtocol {
         case .ipa:
             let zipLocation = try packageConversion.prepareArchiveFormat(of: sourceURL) // Convert ipa file to zip file, then extract
             try archiveOperations.extractArchive(file: zipLocation, to: appCacheDirectory, overwrite: true, password: nil)
-            return appCacheDirectory.appending(path: ZHConstants.PAYLOAD) // Append Payload path in app cache directory
+            return appCacheDirectory.appending(path: ZhareHubConstants.PAYLOAD) // Append Payload path in app cache directory
         case .zip:
             try archiveOperations.extractArchive(file: sourceURL, to: appCacheDirectory, overwrite: true, password: nil) // Extract zip file directly in app cache directory
             return appCacheDirectory

@@ -32,7 +32,7 @@ public final class IPAExtractionStrategy: PackageExtractionProtocol {
         try ZFFileManager.shared.clearCache()
         let zipLocation = try packageConversion.prepareArchiveFormat(of: sourceURL)
         try archiveOperations.extractArchive(file: zipLocation, to: appCacheDirectory, overwrite: true, password: nil)
-        return appCacheDirectory.appending(path: ZHConstants.PAYLOAD)
+        return appCacheDirectory.appending(path: ZhareHubConstants.PAYLOAD)
     }
     
     public func extractAppIcon(from appDirectory: URL, infoPlistData: Data, parser: any PackageParserProtocol, fileName: String?) throws -> Data? {

@@ -52,7 +52,7 @@ public final class APPExtractionStrategy: PackageExtractionProtocol {
     
     public func extractMobileProvision(from appDirectory: URL) throws -> Data? {
         // .app bundles on macOS use embedded.provisionprofile (not .mobileprovision)
-        let provisionProfilePath = appDirectory.appending(component: ZHConstants.EMBEDDED_PROVISION_PROFILE).path()
+        let provisionProfilePath = appDirectory.appending(component: ZhareHubConstants.EMBEDDED_PROVISION_PROFILE).path()
         let cleanPath = provisionProfilePath.removingPercentEncoding ?? provisionProfilePath
         if fileManager.fileExists(atPath: cleanPath) {
             return try Data(contentsOf: URL(filePath: cleanPath))

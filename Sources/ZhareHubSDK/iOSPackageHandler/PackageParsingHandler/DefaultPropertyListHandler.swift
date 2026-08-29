@@ -18,8 +18,12 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
     private var cacheDirectory: URL {
         ZFFileManager.shared.appCacheDirectory
     }
-    
-    public init() {}
+
+    private let logger: ZHLoggerProtocol
+
+    public init(logger: ZHLoggerProtocol = ZHDefaultLogger(subsystem: "com.zharehub.sdk")) {
+        self.logger = logger
+    }
     
     /**
      Creates a plist file at the specified path with the given parameters.
@@ -50,7 +54,7 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
             let plistData = try PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)
             return writePlistData(plistData, to: fileURL)
         } catch {
-            ZOSLogs.shared.error("Failed to serialize plist data: \(error.localizedDescription)")
+            logger.log(level: .error, category: .iosParsing, message: "Failed to serialize plist data", metadata: ["error": error.localizedDescription])
             return .failure(PropertyListError.failedToCreateFile)
         }
     }
@@ -74,7 +78,7 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
             // Extract and return the XML portion
             return .success(provisionData.subdata(in: startRange..<endRange))
         }catch {
-            ZOSLogs.shared.error("Failed to extract properties from .mobileprovision: \(error.localizedDescription)")
+            logger.log(level: .error, category: .iosParsing, message: "Failed to extract properties from .mobileprovision", metadata: ["error": error.localizedDescription])
             return .failure(error)
         }
     }

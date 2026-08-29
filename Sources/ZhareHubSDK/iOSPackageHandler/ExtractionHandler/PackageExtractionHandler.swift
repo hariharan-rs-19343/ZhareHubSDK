@@ -9,59 +9,67 @@ import SwiftUI
 import SUICore
 
 public final class PackageExtractionHandler {
-    
+
     // Dependencies
     private let strategyResolver: PackageExtractionStrategyResolver
     private let packageParseHandler: PackageParserProtocol
-    
+    private let logger: ZHLoggerProtocol
+
     // State
     private var sourceURL: URL!
     private var fileName: String!
-    
+
     // FileManager
     private let fileManager = FileManager.default
-    
+
     public init(
         resolver: PackageExtractionStrategyResolver = PackageExtractionStrategyResolver(),
-        parser packageParseHandler: PackageParserProtocol = DefaultPackageParser()
+        parser packageParseHandler: PackageParserProtocol = DefaultPackageParser(),
+        logger: ZHLoggerProtocol = ZHDefaultLogger(subsystem: "com.zharehub.sdk")
     ) {
         self.strategyResolver = resolver
         self.packageParseHandler = packageParseHandler
+        self.logger = logger
     }
-    
+
     public func initiateAppExtraction(from url: URL, fileName: String) -> Result<PackageExtractionModel, Error> {
         self.sourceURL = url
         self.fileName = fileName
-        
+
+        logger.log(level: .info, category: .iosParsing, message: "Starting package extraction", metadata: ["fileName": fileName])
+        let clock = ContinuousClock()
+        let start = clock.now
+
         // Check if the URL is a security-scoped resource
         let needsScopedAccess = url.startAccessingSecurityScopedResource()
-        
+
         defer {
             if needsScopedAccess {
                 url.stopAccessingSecurityScopedResource()
             }
         }
-        
+
         // Process the package contents for extraction
         do {
             guard let strategy = strategyResolver.resolve(for: url) else {
                 throw FileConversionError.unsupportedFile
             }
-            
+            logger.log(level: .debug, category: .iosParsing, message: "Resolved strategy \(type(of: strategy))")
+
             // 1. Process the package (extract/prepare payload directory)
             let payloadPath = try strategy.processPackage(sourceURL: url)
-            
+
             // 2. Find the .app directory
             guard let appDirectory = try resolveAppDirectory(from: payloadPath) else {
                 throw FileConversionError.custom("Failed to find the .app directory.")
             }
-            
+
             // 3. Read Info.plist
             let infoPlistData = try strategy.extractInfoPlistData(from: appDirectory)
-            
+
             // 4. Extract mobile provision (strategy-specific)
             let mobileProvision = try strategy.extractMobileProvision(from: appDirectory)
-            
+
             // 5. Extract app icon (strategy-specific)
             let appIcon = try strategy.extractAppIcon(
                 from: appDirectory,
@@ -69,10 +77,10 @@ public final class PackageExtractionHandler {
                 parser: packageParseHandler,
                 fileName: fileName
             )
-            
+
             // 6. Prepare app data for upload (strategy-specific, e.g., .app zips first)
             let appData = try strategy.prepareAppData(from: url)
-            
+
             let model = PackageExtractionModel(
                 fileName: fileName,
                 appIcon: appIcon,
@@ -80,10 +88,18 @@ public final class PackageExtractionHandler {
                 mobileProvision: mobileProvision,
                 infoPropertyList: infoPlistData
             )
-            
+
+            let duration = (clock.now - start).secondsString
+            logger.log(
+                level: .info,
+                category: .iosParsing,
+                message: "Package extraction succeeded",
+                metadata: ["fileName": fileName, "durationSeconds": duration]
+            )
             return .success(model)
-        }catch {
-            return .failure(error)
+        } catch {
+            let duration = (clock.now - start).secondsString
+            return .failure(writeLogsAndThrow(error: error, durationSeconds: duration))
         }
     }
     
@@ -137,8 +153,13 @@ public final class PackageExtractionHandler {
         return nil
     }
     
-    private func writeLogsAndThrow(error: FileConversionError) -> FileConversionError {
-        ZOSLogs.shared.error(error.localizedDescription)
+    private func writeLogsAndThrow(error: Error, durationSeconds: String) -> Error {
+        logger.log(
+            level: .error,
+            category: .iosParsing,
+            message: "Package extraction failed",
+            metadata: ["fileName": fileName ?? "", "error": error.localizedDescription, "durationSeconds": durationSeconds]
+        )
         return error
     }
 }

@@ -14,15 +14,22 @@ public typealias ZhareHubDefaultNetworkService = ZhareHubNetworkService<ZHReques
 open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkServiceProtocol {
     
     private var activeUploads: [UUID: UploadRequest] = [:]
-    
+
     private var activeDownloads: [UUID: DownloadRequest] = [:]
+
+    private let session: Session
+
+    private let logger: ZHLoggerProtocol
 
     private static var invalidRequestMessage: String { "Invalid Request" }
 
-    public init() {}
-    
+    public init(logger: ZHLoggerProtocol = ZHDefaultLogger(subsystem: "com.zharehub.sdk")) {
+        self.logger = logger
+        self.session = Session(eventMonitors: [ZHNetworkEventMonitor(logger: logger)])
+    }
+
     deinit {
-        ZOSLogs.shared.info("NetworkService Deinit")
+        logger.log(level: .info, category: .networking, message: "NetworkService Deinit")
         cancelAllRequests()
     }
 
@@ -32,7 +39,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            AF.request(request.path, method: request.method, parameters: request.queryParameters, encoding: request.encoding, headers: request.headers)
+            session.request(request.path, method: request.method, parameters: request.queryParameters, encoding: request.encoding, headers: request.headers)
                 .validate()
                 .responseDecodable(of: T.self) {[weak self] response in
                     switch response.result {
@@ -70,7 +77,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         let uploadId: UUID = UUID()
         
         return try await withCheckedThrowingContinuation { continuation in
-            let uploadRequest = AF.upload(body, to: request.path, method: request.method, headers: request.headers)
+            let uploadRequest = session.upload(body, to: request.path, method: request.method, headers: request.headers)
                 .uploadProgress { progressValue in
                     DispatchQueue.main.async {
                         progress(progressValue.fractionCompleted)
@@ -110,7 +117,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            AF.request(request.path, method: request.method, parameters: request.queryParameters, encoding: request.encoding, headers: request.headers)
+            session.request(request.path, method: request.method, parameters: request.queryParameters, encoding: request.encoding, headers: request.headers)
                 .validate()
                 .response { [weak self] response in
                     guard let self else {
@@ -139,7 +146,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         let uploadId = UUID()
         
         return try await withCheckedThrowingContinuation { continuation in
-            let uploadRequest = AF.upload(body, to: request.path, method: request.method, headers: request.headers)
+            let uploadRequest = session.upload(body, to: request.path, method: request.method, headers: request.headers)
                 .uploadProgress { progressValue in
                     DispatchQueue.main.async {
                         progress(progressValue.fractionCompleted)
@@ -180,7 +187,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
             
             let downloadId = UUID()
             
-            let downloadRequest = AF.download(request.path,
+            let downloadRequest = session.download(request.path,
                         method: request.method,
                         parameters: request.queryParameters,
                         encoding: request.encoding,
@@ -218,7 +225,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
         let downloadId = UUID()
         
         return try await withCheckedThrowingContinuation { continuation in
-            let downloadRequest = AF.download(request.path,
+            let downloadRequest = session.download(request.path,
                         method: request.method,
                         parameters: request.queryParameters,
                         encoding: request.encoding,

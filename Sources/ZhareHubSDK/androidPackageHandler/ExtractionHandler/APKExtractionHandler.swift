@@ -23,6 +23,7 @@ public final class APKExtractionHandler {
     private let iconExtractor: APKIconExtractorProtocol
     private let shell: ShellExecutorProtocol
     private let aapt2Path: String
+    private let logger: ZHLoggerProtocol
 
     public init(
         resolver: APKExtractionStrategyResolver = APKExtractionStrategyResolver(),
@@ -30,7 +31,8 @@ public final class APKExtractionHandler {
         signatureExtractor: APKSignatureExtractorProtocol = DefaultAPKSignatureExtractor(),
         iconExtractor: APKIconExtractorProtocol = DefaultAPKIconExtractor(),
         shell: ShellExecutorProtocol,
-        aapt2Path: String
+        aapt2Path: String,
+        logger: ZHLoggerProtocol = ZHDefaultLogger(subsystem: "com.zharehub.sdk")
     ) {
         self.strategyResolver = resolver
         self.parser = parser
@@ -38,6 +40,7 @@ public final class APKExtractionHandler {
         self.iconExtractor = iconExtractor
         self.shell = shell
         self.aapt2Path = aapt2Path
+        self.logger = logger
     }
 
     /// Extracts a fully populated `APKExtractionModel` from the APK at `url`.
@@ -45,7 +48,12 @@ public final class APKExtractionHandler {
     /// Returns `.failure(FileConversionError.unsupportedPlatform)` if the injected
     /// `ShellExecutorProtocol` is unavailable on the current platform.
     public func initiateAPKExtraction(from url: URL, fileName: String) async -> Result<APKExtractionModel, Error> {
+        logger.log(level: .info, category: .androidParsing, message: "Starting APK extraction", metadata: ["fileName": fileName])
+        let clock = ContinuousClock()
+        let start = clock.now
+
         guard shell.isAvailable else {
+            logger.log(level: .error, category: .androidParsing, message: "Shell executor unavailable on this platform")
             return .failure(FileConversionError.unsupportedPlatform)
         }
 
@@ -59,7 +67,7 @@ public final class APKExtractionHandler {
 
         guard FileManager.default.isExecutableFile(atPath: aapt2Path) else {
             let err = FileConversionError.custom("aapt2 binary not executable at path: \(aapt2Path)")
-            ZOSLogs.shared.error(err.localizedDescription)
+            logger.log(level: .error, category: .androidParsing, message: err.localizedDescription)
             return .failure(err)
         }
 
@@ -67,6 +75,7 @@ public final class APKExtractionHandler {
             guard let strategy = strategyResolver.resolve(for: url) else {
                 throw FileConversionError.unsupportedFile
             }
+            logger.log(level: .debug, category: .androidParsing, message: "Resolved strategy \(type(of: strategy))")
 
             let model = try await strategy.extractMetadata(
                 from: url,
@@ -78,9 +87,27 @@ public final class APKExtractionHandler {
                 iconExtractor: iconExtractor
             )
 
+            let duration = (clock.now - start).secondsString
+            logger.log(
+                level: .info,
+                category: .androidParsing,
+                message: "APK extraction succeeded",
+                metadata: [
+                    "fileName": fileName,
+                    "packageIdentifier": model.properties?.packageIdentifier ?? "",
+                    "versionName": model.properties?.versionName ?? "",
+                    "durationSeconds": duration
+                ]
+            )
             return .success(model)
         } catch {
-            ZOSLogs.shared.error("APK extraction failed: \(error.localizedDescription)")
+            let duration = (clock.now - start).secondsString
+            logger.log(
+                level: .error,
+                category: .androidParsing,
+                message: "APK extraction failed",
+                metadata: ["fileName": fileName, "error": error.localizedDescription, "durationSeconds": duration]
+            )
             return .failure(error)
         }
     }
