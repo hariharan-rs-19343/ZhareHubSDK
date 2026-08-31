@@ -36,7 +36,7 @@ public final class PackageExtractionHandler {
         self.sourceURL = url
         self.fileName = fileName
 
-        logger.log(level: .info, category: .custom("iosParsing"), message: "Starting package extraction", metadata: ["fileName": fileName])
+        logger.info(category: .custom("iosParsing"), message: "Starting package extraction", metadata: ["fileName": fileName])
         let clock = ContinuousClock()
         let start = clock.now
 
@@ -54,7 +54,7 @@ public final class PackageExtractionHandler {
             guard let strategy = strategyResolver.resolve(for: url) else {
                 throw FileConversionError.unsupportedFile
             }
-            logger.log(level: .debug, category: .custom("iosParsing"), message: "Resolved strategy \(type(of: strategy))")
+            logger.debug(category: .custom("iosParsing"), message: "Resolved strategy \(type(of: strategy))")
 
             // 1. Process the package (extract/prepare payload directory)
             let payloadPath = try strategy.processPackage(sourceURL: url)
@@ -90,8 +90,7 @@ public final class PackageExtractionHandler {
             )
 
             let duration = (clock.now - start).secondsString
-            logger.log(
-                level: .info,
+            logger.info(
                 category: .custom("iosParsing"),
                 message: "Package extraction succeeded",
                 metadata: ["fileName": fileName, "durationSeconds": duration]
@@ -154,8 +153,7 @@ public final class PackageExtractionHandler {
     }
     
     private func writeLogsAndThrow(error: Error, durationSeconds: String) -> Error {
-        logger.log(
-            level: .error,
+        logger.error(
             category: .custom("iosParsing"),
             message: "Package extraction failed",
             metadata: ["fileName": fileName ?? "", "error": error.localizedDescription, "durationSeconds": durationSeconds]

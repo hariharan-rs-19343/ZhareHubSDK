@@ -48,12 +48,12 @@ public final class APKExtractionHandler {
     /// Returns `.failure(FileConversionError.unsupportedPlatform)` if the injected
     /// `ShellExecutorProtocol` is unavailable on the current platform.
     public func initiateAPKExtraction(from url: URL, fileName: String) async -> Result<APKExtractionModel, Error> {
-        logger.log(level: .info, category: .custom("androidParsing"), message: "Starting APK extraction", metadata: ["fileName": fileName])
+        logger.info(category: .custom("androidParsing"), message: "Starting APK extraction", metadata: ["fileName": fileName])
         let clock = ContinuousClock()
         let start = clock.now
 
         guard shell.isAvailable else {
-            logger.log(level: .error, category: .custom("androidParsing"), message: "Shell executor unavailable on this platform")
+            logger.error(category: .custom("androidParsing"), message: "Shell executor unavailable on this platform")
             return .failure(FileConversionError.unsupportedPlatform)
         }
 
@@ -67,7 +67,7 @@ public final class APKExtractionHandler {
 
         guard FileManager.default.isExecutableFile(atPath: aapt2Path) else {
             let err = FileConversionError.custom("aapt2 binary not executable at path: \(aapt2Path)")
-            logger.log(level: .error, category: .custom("androidParsing"), message: err.localizedDescription)
+            logger.error(category: .custom("androidParsing"), message: err.localizedDescription)
             return .failure(err)
         }
 
@@ -75,7 +75,7 @@ public final class APKExtractionHandler {
             guard let strategy = strategyResolver.resolve(for: url) else {
                 throw FileConversionError.unsupportedFile
             }
-            logger.log(level: .debug, category: .custom("androidParsing"), message: "Resolved strategy \(type(of: strategy))")
+            logger.debug(category: .custom("androidParsing"), message: "Resolved strategy \(type(of: strategy))")
 
             let model = try await strategy.extractMetadata(
                 from: url,
@@ -88,8 +88,7 @@ public final class APKExtractionHandler {
             )
 
             let duration = (clock.now - start).secondsString
-            logger.log(
-                level: .info,
+            logger.info(
                 category: .custom("androidParsing"),
                 message: "APK extraction succeeded",
                 metadata: [
@@ -102,8 +101,7 @@ public final class APKExtractionHandler {
             return .success(model)
         } catch {
             let duration = (clock.now - start).secondsString
-            logger.log(
-                level: .error,
+            logger.error(
                 category: .custom("androidParsing"),
                 message: "APK extraction failed",
                 metadata: ["fileName": fileName, "error": error.localizedDescription, "durationSeconds": duration]

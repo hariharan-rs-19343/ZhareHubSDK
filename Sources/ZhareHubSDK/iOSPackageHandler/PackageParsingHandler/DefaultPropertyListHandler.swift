@@ -54,7 +54,7 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
             let plistData = try PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)
             return writePlistData(plistData, to: fileURL)
         } catch {
-            logger.log(level: .error, category: .custom("iosParsing"), message: "Failed to serialize plist data", metadata: ["error": error.localizedDescription])
+            logger.error(category: .custom("iosParsing"), message: "Failed to serialize plist data", metadata: ["error": error.localizedDescription])
             return .failure(PropertyListError.failedToCreateFile)
         }
     }
@@ -78,7 +78,7 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
             // Extract and return the XML portion
             return .success(provisionData.subdata(in: startRange..<endRange))
         }catch {
-            logger.log(level: .error, category: .custom("iosParsing"), message: "Failed to extract properties from .mobileprovision", metadata: ["error": error.localizedDescription])
+            logger.error(category: .custom("iosParsing"), message: "Failed to extract properties from .mobileprovision", metadata: ["error": error.localizedDescription])
             return .failure(error)
         }
     }

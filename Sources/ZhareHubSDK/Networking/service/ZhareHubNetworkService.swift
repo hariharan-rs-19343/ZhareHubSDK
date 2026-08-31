@@ -29,7 +29,7 @@ open class ZhareHubNetworkService<E: ZHErrorBody>: @unchecked Sendable, NetworkS
     }
 
     deinit {
-        logger.log(level: .info, category: .networking, message: "NetworkService Deinit")
+        logger.info(category: .networking, message: "NetworkService Deinit")
         cancelAllRequests()
     }
 

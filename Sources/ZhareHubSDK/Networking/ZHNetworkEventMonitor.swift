@@ -31,8 +31,7 @@ final class ZHNetworkEventMonitor: EventMonitor {
             .map(\.name).joined(separator: ",") ?? ""
         let bodyBytes = urlRequest.httpBody?.count ?? 0
 
-        logger.log(
-            level: .info,
+        logger.info(
             category: .networking,
             message: "→ \(urlRequest.httpMethod ?? "?") \(urlRequest.url?.absoluteString ?? "?")",
             metadata: ["headerNames": headerNames, "queryKeys": queryKeys, "bodyBytes": "\(bodyBytes)"]
@@ -41,8 +40,7 @@ final class ZHNetworkEventMonitor: EventMonitor {
 
     func request(_ request: Request, didGatherMetrics metrics: URLSessionTaskMetrics) {
         let duration = String(format: "%.3f", metrics.taskInterval.duration)
-        logger.log(
-            level: .debug,
+        logger.debug(
             category: .networking,
             message: "\(request.request?.httpMethod ?? "?") \(request.request?.url?.absoluteString ?? "?") took \(duration)s",
             metadata: ["durationSeconds": duration]
@@ -71,11 +69,11 @@ final class ZHNetworkEventMonitor: EventMonitor {
         if let size { metadata["responseBytes"] = "\(size)" }
         if let error { metadata["error"] = error.localizedDescription }
 
-        logger.log(
-            level: error == nil ? .info : .error,
-            category: .networking,
-            message: "← \(request.request?.httpMethod ?? "?") \(request.request?.url?.absoluteString ?? "?")",
-            metadata: metadata
-        )
+        let message = "← \(request.request?.httpMethod ?? "?") \(request.request?.url?.absoluteString ?? "?")"
+        if error == nil {
+            logger.info(category: .networking, message: message, metadata: metadata)
+        } else {
+            logger.error(category: .networking, message: message, metadata: metadata)
+        }
     }
 }
