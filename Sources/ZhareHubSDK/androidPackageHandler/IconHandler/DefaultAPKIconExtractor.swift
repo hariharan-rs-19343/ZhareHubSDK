@@ -13,6 +13,8 @@
 //   3. Density scan: any `ic_launcher*.png` / `.webp` under `res/mipmap-*/`
 //      or `res/drawable-*/`.
 //   4. Best square PNG fallback for obfuscated APKs.
+//   5. Android's stock launcher icon (`APKDefaultIcon`) when the APK declares
+//      no usable icon, so extraction always yields an icon.
 //
 
 import Foundation
@@ -32,7 +34,7 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
         let entries = parser.parseAllIconEntries(from: badgingOutput)
         let iconPath = bestIconPath(entries: entries)
 
-        guard let zip = APKZipReader(url: apkURL) else { return nil }
+        guard let zip = APKZipReader(url: apkURL) else { return await defaultIcon() }
 
         // 1. Direct raster
         if let relPath = iconPath, !relPath.hasSuffix(".xml"),
@@ -68,7 +70,13 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
             return APKIconResult(image: result.0, strategy: .anyPNG, sourcePath: result.1)
         }
 
-        return nil
+        // 5. Default Android icon
+        return await defaultIcon()
+    }
+
+    private func defaultIcon() async -> APKIconResult? {
+        guard let image = await MainActor.run(body: { APKDefaultIcon.render() }) else { return nil }
+        return APKIconResult(image: image, strategy: .defaultIcon, sourcePath: nil)
     }
 
     // MARK: - Selection

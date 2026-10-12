@@ -11,6 +11,8 @@ public enum APKIconExtractionStrategyKind: String, Sendable {
     case vectorRendered
     case densityFallback
     case anyPNG
+    /// The APK declares no usable icon; Android's stock launcher icon is used.
+    case defaultIcon
 }
 
 public struct APKIconResult: Sendable {

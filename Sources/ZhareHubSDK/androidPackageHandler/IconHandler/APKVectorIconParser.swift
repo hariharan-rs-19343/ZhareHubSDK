@@ -298,12 +298,21 @@ struct VectorDrawable {
 
     struct VectorPath {
         var pathData: String = ""
-        var fillColor: PlatformColor?
-        var strokeColor: PlatformColor?
+        var fill: VectorPaint?
+        var stroke: VectorPaint?
+        /// Raw `@0x…` resource references for fill / stroke, resolved into
+        /// `fill` / `stroke` by `APKVectorIconParser` before rendering.
+        var fillRef: String?
+        var strokeRef: String?
         var strokeWidth: CGFloat = 0
         var fillAlpha: CGFloat = 1
         var strokeAlpha: CGFloat = 1
         var fillType: CGPathFillRule = .winding
+
+        /// Whether the source XML declared any fill or stroke at all.
+        var hasDeclaredPaint: Bool {
+            fill != nil || fillRef != nil || (strokeWidth > 0 && (stroke != nil || strokeRef != nil))
+        }
     }
 
     struct VectorGroup {
@@ -316,6 +325,42 @@ struct VectorDrawable {
         var pivotY: CGFloat = 0
         var elements: [Element] = []
     }
+
+    /// Recursively rewrites every path in the drawable.
+    mutating func transformPaths(_ transform: (inout VectorPath) async -> Void) async {
+        elements = await Self.transform(elements, transform)
+    }
+
+    private static func transform(_ elements: [Element],
+                                  _ transform: (inout VectorPath) async -> Void) async -> [Element] {
+        var result: [Element] = []
+        for element in elements {
+            switch element {
+            case .path(var p):
+                await transform(&p)
+                result.append(.path(p))
+            case .group(var g):
+                g.elements = await Self.transform(g.elements, transform)
+                result.append(.group(g))
+            }
+        }
+        return result
+    }
+}
+
+// MARK: - Vector Paint
+
+/// A fill / stroke paint: a solid color or an Android `<gradient>` (complex color).
+/// Gradient coordinates are in the vector's viewport space.
+enum VectorPaint {
+    struct Stop {
+        let color: PlatformColor
+        let offset: CGFloat
+    }
+
+    case color(PlatformColor)
+    case linearGradient(start: CGPoint, end: CGPoint, stops: [Stop])
+    case radialGradient(center: CGPoint, radius: CGFloat, stops: [Stop])
 }
 
 // MARK: - VectorDrawable / Adaptive-Icon XML Names
@@ -334,6 +379,9 @@ enum VectorDrawableXML {
         case inset
         case color
         case drawable
+        case gradient
+        case item
+        case selector
     }
 
     enum Attribute: String {
@@ -357,7 +405,38 @@ enum VectorDrawableXML {
         case pivotY
         case drawable
         case color
+        // <gradient>
+        case type
+        case startX
+        case startY
+        case endX
+        case endY
+        case centerX
+        case centerY
+        case gradientRadius
+        case startColor
+        case centerColor
+        case endColor
+        case offset
     }
+
+    /// `android:fillType="evenOdd"` — aapt2 emits enum attributes as integers.
+    static let evenOddFillTypeValues: Set<String> = ["evenOdd", "1"]
+
+    /// `android:type` values of `<gradient>`.
+    enum GradientType: String {
+        case linear = "0"
+        case radial = "1"
+        case sweep = "2"
+    }
+
+    /// Framework (`@android:color/…`) colors commonly used in launcher vectors.
+    /// These live in the platform, not the APK, so `dump resources` can't resolve them.
+    static let frameworkColors: [String: String] = [
+        "0x0106000b": "#FFFFFFFF", // white
+        "0x0106000c": "#FF000000", // black
+        "0x0106000d": "#00000000", // transparent
+    ]
 }
 
 // MARK: - aapt2 xmltree Parser
@@ -454,12 +533,19 @@ struct XmlTreeParser {
             case VectorDrawableXML.Tag.path.rawValue:
                 var vp = VectorDrawable.VectorPath()
                 vp.pathData = node.attributes[VectorDrawableXML.Attribute.pathData.rawValue] ?? ""
-                vp.fillColor = parseColor(node.attributes[VectorDrawableXML.Attribute.fillColor.rawValue])
-                vp.strokeColor = parseColor(node.attributes[VectorDrawableXML.Attribute.strokeColor.rawValue])
+                let fillValue = node.attributes[VectorDrawableXML.Attribute.fillColor.rawValue]
+                let strokeValue = node.attributes[VectorDrawableXML.Attribute.strokeColor.rawValue]
+                vp.fill = parseColor(fillValue).map(VectorPaint.color)
+                vp.stroke = parseColor(strokeValue).map(VectorPaint.color)
+                vp.fillRef = resourceReference(fillValue)
+                vp.strokeRef = resourceReference(strokeValue)
                 vp.strokeWidth = parseDimension(node.attributes[VectorDrawableXML.Attribute.strokeWidth.rawValue]) ?? 0
                 vp.fillAlpha = parseDimension(node.attributes[VectorDrawableXML.Attribute.fillAlpha.rawValue]) ?? 1
                 vp.strokeAlpha = parseDimension(node.attributes[VectorDrawableXML.Attribute.strokeAlpha.rawValue]) ?? 1
-                if node.attributes[VectorDrawableXML.Attribute.fillType.rawValue] == "evenOdd" { vp.fillType = .evenOdd }
+                if let fillType = node.attributes[VectorDrawableXML.Attribute.fillType.rawValue],
+                   VectorDrawableXML.evenOddFillTypeValues.contains(fillType) {
+                    vp.fillType = .evenOdd
+                }
                 elements.append(.path(vp))
             case VectorDrawableXML.Tag.group.rawValue:
                 var vg = VectorDrawable.VectorGroup()
@@ -477,6 +563,51 @@ struct XmlTreeParser {
             }
         }
         return elements
+    }
+
+    /// Returns the value when it is an `@0x…` resource reference, else `nil`.
+    static func resourceReference(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespaces), value.hasPrefix("@0x") else { return nil }
+        return value
+    }
+
+    /// Parses a compiled `<gradient>` (Android complex color) into a paint.
+    static func parseGradient(from root: XmlNode) -> VectorPaint? {
+        guard root.tag == VectorDrawableXML.Tag.gradient.rawValue else { return nil }
+        typealias Attr = VectorDrawableXML.Attribute
+        func value(_ attr: Attr) -> CGFloat? { parseDimension(root.attributes[attr.rawValue]) }
+        func color(_ attr: Attr) -> PlatformColor? { parseColor(root.attributes[attr.rawValue]) }
+
+        var stops: [VectorPaint.Stop] = root.children.compactMap { item in
+            guard item.tag == VectorDrawableXML.Tag.item.rawValue,
+                  let c = parseColor(item.attributes[Attr.color.rawValue]) else { return nil }
+            return VectorPaint.Stop(color: c, offset: parseDimension(item.attributes[Attr.offset.rawValue]) ?? 0)
+        }
+        if stops.isEmpty {
+            if let start = color(.startColor) { stops.append(.init(color: start, offset: 0)) }
+            if let center = color(.centerColor) { stops.append(.init(color: center, offset: 0.5)) }
+            if let end = color(.endColor) { stops.append(.init(color: end, offset: 1)) }
+        }
+        guard let first = stops.first else { return nil }
+
+        let type = VectorDrawableXML.GradientType(rawValue: root.attributes[Attr.type.rawValue] ?? "") ?? .linear
+        switch type {
+        case .linear:
+            return .linearGradient(
+                start: CGPoint(x: value(.startX) ?? 0, y: value(.startY) ?? 0),
+                end: CGPoint(x: value(.endX) ?? 0, y: value(.endY) ?? 0),
+                stops: stops
+            )
+        case .radial:
+            return .radialGradient(
+                center: CGPoint(x: value(.centerX) ?? 0, y: value(.centerY) ?? 0),
+                radius: value(.gradientRadius) ?? 0,
+                stops: stops
+            )
+        case .sweep:
+            // Core Graphics has no conic gradient; approximate with the first stop.
+            return .color(first.color)
+        }
     }
 
     static func parseDimension(_ value: String?) -> CGFloat? {
@@ -558,23 +689,75 @@ struct VectorDrawableRenderer {
         let cgPath = AndroidPathDataParser.buildPath(from: commands)
 
         ctx.saveGState()
-        if let fillColor = vPath.fillColor {
-            ctx.setFillColor(fillColor.withAlphaComponent(vPath.fillAlpha).cgColor)
-            ctx.addPath(cgPath)
-            ctx.fillPath(using: vPath.fillType)
+        if let fill = vPath.fill {
+            paint(fill, alpha: vPath.fillAlpha, in: ctx) {
+                ctx.addPath(cgPath)
+                switch fill {
+                case .color: ctx.fillPath(using: vPath.fillType)
+                default: ctx.clip(using: vPath.fillType)
+                }
+            }
         }
-        if let strokeColor = vPath.strokeColor, vPath.strokeWidth > 0 {
-            ctx.setStrokeColor(strokeColor.withAlphaComponent(vPath.strokeAlpha).cgColor)
-            ctx.setLineWidth(vPath.strokeWidth)
-            ctx.addPath(cgPath)
-            ctx.strokePath()
+        if let stroke = vPath.stroke, vPath.strokeWidth > 0 {
+            paint(stroke, alpha: vPath.strokeAlpha, in: ctx) {
+                ctx.setLineWidth(vPath.strokeWidth)
+                ctx.addPath(cgPath)
+                switch stroke {
+                case .color: ctx.strokePath()
+                default:
+                    ctx.replacePathWithStrokedPath()
+                    ctx.clip()
+                }
+            }
         }
-        if vPath.fillColor == nil && (vPath.strokeColor == nil || vPath.strokeWidth <= 0) {
+        // Legacy fallback for paths that declare no paint at all (e.g. tint-only icons).
+        // Unresolvable references are left unpainted rather than drawn black.
+        if !vPath.hasDeclaredPaint {
             ctx.setFillColor(PlatformColor.black.cgColor)
             ctx.addPath(cgPath)
             ctx.fillPath(using: vPath.fillType)
         }
         ctx.restoreGState()
+    }
+
+    /// Sets up `paint` and runs `draw`. For a solid color `draw` fills / strokes
+    /// directly; for gradients `draw` must clip to the path, and the gradient is
+    /// then drawn over the clip.
+    private static func paint(_ paint: VectorPaint, alpha: CGFloat, in ctx: CGContext, draw: () -> Void) {
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+
+        switch paint {
+        case .color(let color):
+            // Multiply (not replace) so `#AARRGGBB` colors keep their own alpha.
+            let base = color.cgColor
+            let cgColor = base.copy(alpha: base.alpha * alpha) ?? base
+            ctx.setFillColor(cgColor)
+            ctx.setStrokeColor(cgColor)
+            draw()
+        case .linearGradient(let start, let end, let stops):
+            guard let gradient = cgGradient(from: stops) else { return }
+            draw()
+            ctx.setAlpha(alpha)
+            ctx.drawLinearGradient(gradient, start: start, end: end,
+                                   options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        case .radialGradient(let center, let radius, let stops):
+            guard radius > 0, let gradient = cgGradient(from: stops) else { return }
+            draw()
+            ctx.setAlpha(alpha)
+            ctx.drawRadialGradient(gradient, startCenter: center, startRadius: 0,
+                                   endCenter: center, endRadius: radius,
+                                   options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        }
+    }
+
+    private static func cgGradient(from stops: [VectorPaint.Stop]) -> CGGradient? {
+        let sorted = stops.sorted { $0.offset < $1.offset }
+        return CGGradient(
+            colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            colors: sorted.map(\.color.cgColor) as CFArray,
+            locations: sorted.map(\.offset)
+        )
     }
 
     private static func renderGroup(_ vGroup: VectorDrawable.VectorGroup, in ctx: CGContext) {
@@ -619,7 +802,7 @@ final class APKVectorIconParser: @unchecked Sendable {
         case VectorDrawableXML.Tag.adaptiveIcon.rawValue:
             return await renderAdaptiveIcon(root, apkPath: apkPath, outputSize: outputSize)
         case VectorDrawableXML.Tag.vector.rawValue:
-            return await renderVector(root, outputSize: outputSize)
+            return await renderVector(root, apkPath: apkPath, outputSize: outputSize)
         default:
             return nil
         }
@@ -660,7 +843,7 @@ final class APKVectorIconParser: @unchecked Sendable {
         }
         for child in node.children {
             if child.tag == VectorDrawableXML.Tag.vector.rawValue {
-                return await renderVector(child, outputSize: outputSize)
+                return await renderVector(child, apkPath: apkPath, outputSize: outputSize)
             } else if child.tag == VectorDrawableXML.Tag.inset.rawValue {
                 return await resolveLayer(child, apkPath: apkPath, outputSize: outputSize)
             } else if child.tag == VectorDrawableXML.Tag.color.rawValue || child.tag == VectorDrawableXML.Tag.drawable.rawValue {
@@ -676,32 +859,7 @@ final class APKVectorIconParser: @unchecked Sendable {
     private func resolveResourceId(_ ref: String,
                                    apkPath: URL,
                                    outputSize: CGSize) async -> PlatformImage? {
-        let cleanRef = ref.replacingOccurrences(of: "@", with: "")
-        guard let dump = await dumpResources(apkPath: apkPath) else { return nil }
-
-        let lines = dump.components(separatedBy: "\n")
-        var foundResource = false
-        var candidatePaths: [String] = []
-        var colorValue: String?
-
-        for line in lines {
-            if line.contains(cleanRef) { foundResource = true; continue }
-            if foundResource {
-                if line.contains("resource ") { break }
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if let resRange = trimmed.range(of: APKConstants.resourcePrefix) {
-                    var path = String(trimmed[resRange.lowerBound...])
-                    if let typeRange = path.range(of: " type=") {
-                        path = String(path[..<typeRange.lowerBound])
-                    }
-                    candidatePaths.append(path)
-                } else if trimmed.contains("#") {
-                    if let hashIdx = trimmed.firstIndex(of: "#") {
-                        colorValue = String(trimmed[hashIdx...])
-                    }
-                }
-            }
-        }
+        guard let (candidatePaths, colorValue) = await resourceEntries(for: ref, apkPath: apkPath) else { return nil }
 
         if candidatePaths.isEmpty, let colorStr = colorValue,
            let color = XmlTreeParser.parseColor(colorStr) {
@@ -745,31 +903,105 @@ final class APKVectorIconParser: @unchecked Sendable {
 
     // MARK: - Vector
 
-    private func renderVector(_ root: XmlTreeParser.XmlNode, outputSize: CGSize) async -> PlatformImage? {
-        guard let drawable = XmlTreeParser.parseVectorDrawable(from: root) else { return nil }
-        return await MainActor.run {
-            VectorDrawableRenderer.render(drawable, size: outputSize)
+    private func renderVector(_ root: XmlTreeParser.XmlNode, apkPath: URL, outputSize: CGSize) async -> PlatformImage? {
+        guard var drawable = XmlTreeParser.parseVectorDrawable(from: root) else { return nil }
+        await drawable.transformPaths { path in
+            if let ref = path.fillRef { path.fill = await self.resolvePaint(ref, apkPath: apkPath) }
+            if let ref = path.strokeRef { path.stroke = await self.resolvePaint(ref, apkPath: apkPath) }
         }
+        let resolved = drawable
+        return await MainActor.run {
+            VectorDrawableRenderer.render(resolved, size: outputSize)
+        }
+    }
+
+    /// Resolves a `fillColor` / `strokeColor` resource reference to a color or
+    /// gradient (aapt2 compiles inline `<aapt:attr>` gradients into such resources).
+    private func resolvePaint(_ ref: String, apkPath: URL) async -> VectorPaint? {
+        let cleanRef = ref.replacingOccurrences(of: "@", with: "")
+        if let hex = VectorDrawableXML.frameworkColors[cleanRef] {
+            return XmlTreeParser.parseColor(hex).map(VectorPaint.color)
+        }
+        guard let (paths, colorValue) = await resourceEntries(for: ref, apkPath: apkPath) else { return nil }
+
+        if paths.isEmpty, let color = XmlTreeParser.parseColor(colorValue) {
+            return .color(color)
+        }
+        for path in paths.reversed() where path.hasSuffix(".xml") {
+            guard let xml = await dumpXmlTree(apkPath: apkPath, filePath: path),
+                  let root = XmlTreeParser.parse(xml) else { continue }
+
+            if let gradient = XmlTreeParser.parseGradient(from: root) {
+                return gradient
+            }
+            // Color state list: the last item is the default state.
+            if root.tag == VectorDrawableXML.Tag.selector.rawValue,
+               let item = root.children.last(where: { $0.tag == VectorDrawableXML.Tag.item.rawValue }),
+               let color = XmlTreeParser.parseColor(item.attributes[VectorDrawableXML.Attribute.color.rawValue]) {
+                return .color(color)
+            }
+        }
+        return nil
+    }
+
+    /// Looks `ref` (`@0x7f…`) up in `aapt2 dump resources` and returns its file
+    /// paths (across configurations) and/or inline color value.
+    private func resourceEntries(for ref: String, apkPath: URL) async -> (paths: [String], color: String?)? {
+        let cleanRef = ref.replacingOccurrences(of: "@", with: "")
+        guard let dump = await dumpResources(apkPath: apkPath) else { return nil }
+
+        var foundResource = false
+        var paths: [String] = []
+        var colorValue: String?
+
+        for line in dump.components(separatedBy: "\n") {
+            if !foundResource {
+                if line.contains("resource \(cleanRef) ") { foundResource = true }
+                continue
+            }
+            if line.contains("resource ") { break }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let resRange = trimmed.range(of: APKConstants.resourcePrefix) {
+                var path = String(trimmed[resRange.lowerBound...])
+                if let typeRange = path.range(of: " type=") {
+                    path = String(path[..<typeRange.lowerBound])
+                }
+                paths.append(path)
+            } else if let hashIdx = trimmed.firstIndex(of: "#") {
+                colorValue = String(trimmed[hashIdx...])
+            }
+        }
+
+        return foundResource ? (paths, colorValue) : nil
     }
 
     // MARK: - Compositing
 
     @MainActor
     private func composite(background: PlatformImage?, foreground: PlatformImage?, size: CGSize) -> PlatformImage? {
+        Self.composite(background: background, foreground: foreground, size: size)
+    }
+
+    /// Composites adaptive-icon layers the way a launcher shows them: both 108dp
+    /// layers are scaled so their inner 72dp safe zone fills `size`, then masked.
+    @MainActor
+    static func composite(background: PlatformImage?, foreground: PlatformImage?, size: CGSize) -> PlatformImage? {
         guard background != nil || foreground != nil else { return nil }
 
         return PlatformImage.rendered(size: size) { cgCtx in
             let rect = CGRect(origin: .zero, size: size)
+            // 108dp layer → 72dp visible viewport: extend by 18/72 = 1/4 on each side.
+            let layerRect = rect.insetBy(dx: -rect.width / 4, dy: -rect.height / 4)
 
-            cgCtx.addPath(self.adaptiveIconMask(in: rect))
+            cgCtx.addPath(adaptiveIconMask(in: rect))
             cgCtx.clip()
 
-            background?.draw(in: rect)
-            foreground?.draw(in: rect)
+            background?.draw(in: layerRect)
+            foreground?.draw(in: layerRect)
         }
     }
 
-    private func adaptiveIconMask(in rect: CGRect) -> CGPath {
+    private static func adaptiveIconMask(in rect: CGRect) -> CGPath {
         let w = rect.width, h = rect.height
         let cx = rect.midX, cy = rect.midY
         let path = CGMutablePath()
