@@ -6,44 +6,37 @@
 //
 
 import Foundation
-import SUICore
 import UniformTypeIdentifiers
 
 public final class AppPackageProcessor: PackageProcessorProtocol {
     
     private let archiveOperations: ArchiveOperationsProtocol
-    private let packageConversion: PackageConversionProtocol
-    
-    private var appCacheDirectory: URL {
-        ZFFileManager.shared.appCacheDirectory
-    }
     
     public init(archiveOperations: ArchiveOperationsProtocol = DefaultArchiveOperations(),
          packageConversion: PackageConversionProtocol = DefaultPackageConversion())
     {
         self.archiveOperations = archiveOperations
-        self.packageConversion = packageConversion
+        _ = packageConversion
     }
     
     public func processPackage(of sourceURL: URL) throws -> URL {
-        /// Clear existing cache
-        try ZFFileManager.shared.clearCache()
-        
         guard let fileExtension = getPackageExtension(at: sourceURL) else {
             throw FileConversionError.unsupportedFile
         }
-        
+
         switch fileExtension {
         case .ipa:
-            let zipLocation = try packageConversion.prepareArchiveFormat(of: sourceURL) // Convert ipa file to zip file, then extract
-            try archiveOperations.extractArchive(file: zipLocation, to: appCacheDirectory, overwrite: true, password: nil)
-            return appCacheDirectory.appending(path: ZhareHubConstants.PAYLOAD) // Append Payload path in app cache directory
+            let workspace = try ExtractionWorkspace.make()
+            let archiveName = ExtractionWorkspace.singlePathComponent(sourceURL.deletingPathExtension().lastPathComponent) ?? "package"
+            let zipLocation = workspace.appending(component: archiveName).appendingPathExtension("zip")
+            try FileManager.default.copyItem(at: sourceURL, to: zipLocation)
+            try archiveOperations.extractArchive(file: zipLocation, to: workspace, overwrite: true, password: nil)
+            return workspace.appending(component: ZhareHubConstants.PAYLOAD)
         case .zip:
-            try archiveOperations.extractArchive(file: sourceURL, to: appCacheDirectory, overwrite: true, password: nil) // Extract zip file directly in app cache directory
-            return appCacheDirectory
-            
+            let workspace = try ExtractionWorkspace.make()
+            try archiveOperations.extractArchive(file: sourceURL, to: workspace, overwrite: true, password: nil)
+            return workspace
         case .app:
-            /// .app bundle — copy into a Payload directory in cache
             return sourceURL
         default:
             throw FileConversionError.unsupportedFile

@@ -35,13 +35,22 @@ public final class APKZipReader {
         }
     }
 
-    /// Extracts a single entry by path. Returns the decompressed file data, or `nil` if absent / empty.
-    public func extractEntry(path: String) -> Data? {
+    /// Extracts a single entry by path. Returns the decompressed file data, or `nil` if absent, corrupt, or over the size limit.
+    public func extractEntry(path: String, maximumBytes: UInt64 = 32 * 1_024 * 1_024) -> Data? {
         guard let zipEntry = archive[path] else { return nil }
+        guard zipEntry.uncompressedSize <= maximumBytes else { return nil }
         var result = Data()
-        _ = try? archive.extract(zipEntry) { chunk in
-            result.append(chunk)
+        do {
+            _ = try archive.extract(zipEntry) { chunk in
+                result.append(chunk)
+                if UInt64(result.count) > maximumBytes {
+                    throw FileConversionError.fileReadFailed
+                }
+            }
+        } catch {
+            return nil
         }
+        guard UInt64(result.count) == zipEntry.uncompressedSize else { return nil }
         return result.isEmpty ? nil : result
     }
 }

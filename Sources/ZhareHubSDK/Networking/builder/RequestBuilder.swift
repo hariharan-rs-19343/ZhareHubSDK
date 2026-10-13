@@ -15,6 +15,7 @@ public class RequestBuilder {
     private var queryParameters: Parameters?
     private var encoding: ParameterEncoding = URLEncoding.default
     private var body: Data?
+    private var contentType: String?
     private var timeoutInterval: TimeInterval = 30
     private var cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
     
@@ -34,6 +35,9 @@ public class RequestBuilder {
     
     public func set<T: Encodable>(body: T, encoder: JSONEncoder = JSONEncoder()) throws -> RequestBuilder {
         self.body = try encoder.encode(body)
+        if contentType == nil {
+            contentType = "application/json"
+        }
         return self
     }
     
@@ -69,6 +73,7 @@ public class RequestBuilder {
                               queryParameters: queryParameters,
                               encoding: encoding,
                               body: body,
+                              contentType: contentType,
                               timeoutInterval: timeoutInterval,
                               cachePolicy: cachePolicy)
     }

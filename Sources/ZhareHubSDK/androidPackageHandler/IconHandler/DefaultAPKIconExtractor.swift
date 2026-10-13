@@ -50,8 +50,10 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
             if let image = await vectorParser.renderIcon(from: apkURL, iconXmlPath: xmlPath) {
                 return APKIconResult(image: image, strategy: .vectorRendered, sourcePath: xmlPath)
             }
+            if vectorParser.didFailToolInvocation {
+                return await defaultIcon()
+            }
 
-            // 2.5 Adaptive-icon foreground PNG resolution
             if let result = await extractAdaptiveIconPNGs(
                 from: apkURL, iconXml: xmlPath,
                 shell: shell, aapt2Path: aapt2Path, zip: zip
@@ -66,7 +68,7 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
         }
 
         // 4. Best square PNG
-        if let result = extractBestSquarePNG(from: zip) {
+        if iconPath != nil, let result = extractBestSquarePNG(from: zip) {
             return APKIconResult(image: result.0, strategy: .anyPNG, sourcePath: result.1)
         }
 
@@ -83,8 +85,9 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
 
     private func bestIconPath(entries: [APKIconEntry]) -> String? {
         guard !entries.isEmpty else { return nil }
-        if let png = entries.filter(\.isPNG).max(by: { $0.density < $1.density }) { return png.path }
-        if let webp = entries.filter(\.isWebP).max(by: { $0.density < $1.density }) { return webp.path }
+        if let raster = entries.filter(\.isRasterImage).max(by: { $0.density < $1.density }) {
+            return raster.path
+        }
         return entries.max(by: { $0.density < $1.density })?.path
     }
 
@@ -99,9 +102,9 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
     ) async -> (PlatformImage, String)? {
         guard let xmlOut = try? await shell.run(
             executablePath: aapt2Path,
-            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.xmltree.rawValue, apkPath.path, APKConstants.AAPT2.fileFlag, iconXml],
+            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.xmltree.rawValue, apkPath.path(percentEncoded: false), APKConstants.AAPT2.fileFlag, iconXml],
             environment: nil, workingDirectory: nil, timeout: 30
-        ), !xmlOut.output.isEmpty else { return nil }
+        ), xmlOut.isSuccess, !xmlOut.output.isEmpty else { return nil }
 
         let refPattern = "foreground[\\s\\S]*?drawable.*?=(@0x[0-9a-fA-F]+)"
         guard let refRegex = try? NSRegularExpression(pattern: refPattern),
@@ -113,25 +116,26 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
 
         guard let resOut = try? await shell.run(
             executablePath: aapt2Path,
-            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.resources.rawValue, apkPath.path],
-            environment: nil, workingDirectory: nil, timeout: 15
-        ), !resOut.output.isEmpty else { return nil }
+            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.resources.rawValue, apkPath.path(percentEncoded: false)],
+            environment: nil, workingDirectory: nil, timeout: 30
+        ), resOut.isSuccess, !resOut.output.isEmpty else { return nil }
 
         var foundResource = false
         var pngPaths: [String] = []
         for line in resOut.output.components(separatedBy: "\n") {
-            if line.contains(cleanRef) { foundResource = true; continue }
-            if foundResource {
-                if line.contains("resource ") { break }
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if let resRange = trimmed.range(of: APKConstants.resourcePrefix) {
-                    var path = String(trimmed[resRange.lowerBound...])
-                    if let typeRange = path.range(of: " type=") {
-                        path = String(path[..<typeRange.lowerBound])
-                    }
-                    if path.hasSuffix(".png") || path.hasSuffix(".webp") {
-                        pngPaths.append(path)
-                    }
+            if !foundResource {
+                if line.contains("resource \(cleanRef) ") { foundResource = true }
+                continue
+            }
+            if line.contains("resource ") { break }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let resRange = trimmed.range(of: APKConstants.resourcePrefix) {
+                var path = String(trimmed[resRange.lowerBound...])
+                if let typeRange = path.range(of: " type=") {
+                    path = String(path[..<typeRange.lowerBound])
+                }
+                if path.hasSuffix(".png") || path.hasSuffix(".webp") {
+                    pngPaths.append(path)
                 }
             }
         }
@@ -148,11 +152,13 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
 
     private func extractByDensityScan(from zip: APKZipReader) -> (PlatformImage, String)? {
         let candidates = zip.entries.filter { entry in
-            let p = entry.path.lowercased()
-            return (p.hasPrefix("res/mipmap-") || p.hasPrefix("res/drawable-")) &&
-                   (p.hasSuffix(".png") || p.hasSuffix(".webp")) &&
-                   p.contains("ic_launcher")
-        }.sorted { $0.uncompressedSize > $1.uncompressedSize }
+            let path = entry.path.lowercased()
+            let fileName = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+            let isLauncher = fileName == "ic_launcher" || fileName == "ic_launcher_round"
+            return (path.hasPrefix("res/mipmap-") || path.hasPrefix("res/drawable-")) &&
+                   (path.hasSuffix(".png") || path.hasSuffix(".webp")) &&
+                   isLauncher
+        }.sorted { Self.densityRank($0.path) > Self.densityRank($1.path) }
 
         for entry in candidates {
             if let data = zip.extractEntry(path: entry.path),
@@ -208,4 +214,13 @@ public final class DefaultAPKIconExtractor: APKIconExtractorProtocol {
     }
 
     private static let iconSizes: Set<Int> = [48, 72, 96, 108, 128, 144, 162, 192, 216, 256, 324, 432, 512]
+
+    private static func densityRank(_ path: String) -> Int {
+        let qualifier = path.lowercased()
+        let ranks = [("xxxhdpi", 640), ("xxhdpi", 480), ("xhdpi", 320), ("hdpi", 240), ("mdpi", 160), ("ldpi", 120)]
+        for (name, rank) in ranks where qualifier.contains(name) {
+            return rank
+        }
+        return 0
+    }
 }

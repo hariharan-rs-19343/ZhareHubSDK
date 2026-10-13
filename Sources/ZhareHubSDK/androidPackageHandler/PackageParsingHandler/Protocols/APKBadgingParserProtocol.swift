@@ -11,9 +11,11 @@ public protocol APKBadgingParserProtocol: Sendable {
     func parseSingleValue(from output: String, key: String) -> String
     func parseDeviceCompatibility(from output: String) -> [String]
     func parseFeatures(from output: String) -> [String]
+    func parseOptionalFeatures(from output: String) -> [String]
     func parsePermissions(from output: String) -> [String]
     func parseAllIconEntries(from output: String) -> [APKIconEntry]
     func loadProperties(from output: String) -> APKBundleProperties
+    func loadProperties(from output: String, fileName: String) -> APKBundleProperties
 }
 
 /// A single icon entry from `aapt2 dump badging`. Used by both the parser and the icon extractor.

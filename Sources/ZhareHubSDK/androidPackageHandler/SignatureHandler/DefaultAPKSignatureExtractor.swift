@@ -14,33 +14,50 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
     public init() {}
 
     public func extract(from apkPath: URL) -> APKSignatureInfo {
-        var signerDN: String = APKConstants.notAvailable
+        let signingBlock = extractCertFromSigningBlock(at: apkPath)
+        var schemes: [String] = []
+        if signingBlock?.v3 == true { schemes.append("v3") }
+        if signingBlock?.v2 == true { schemes.append("v2") }
 
-        // --- v1: META-INF/*.RSA/.DSA/.EC ---
-        if let zip = APKZipReader(url: apkPath) {
-            let metaEntries = zip.entries.map(\.path).filter { $0.hasPrefix("META-INF/") }
-            let hasManifest = metaEntries.contains("META-INF/MANIFEST.MF")
-            let hasSF = metaEntries.contains { $0.hasSuffix(".SF") }
-            let sigBlockExtensions = [".RSA", ".DSA", ".EC"]
-            let sigBlockEntry = metaEntries.first { path in
-                sigBlockExtensions.contains { path.uppercased().hasSuffix($0) }
-            }
-            if hasManifest && hasSF,
-               let blockPath = sigBlockEntry,
-               let pkcs7Data = zip.extractEntry(path: blockPath) {
-                signerDN = extractCertificateDN(from: pkcs7Data)
-            }
-        }
-
-        // --- v2 / v3: APK Signing Block ---
-        if signerDN == APKConstants.notAvailable,
-           let certData = extractCertFromSigningBlock(at: apkPath),
-           let der = certData.certificate,
+        if let der = signingBlock?.certificate,
            let cert = SecCertificateCreateWithData(nil, der as CFData) {
-            signerDN = formatCertificateDN(cert)
+            if let v1 = v1Certificate(at: apkPath) {
+                schemes.append("v1")
+                _ = v1
+            }
+            return APKSignatureInfo(signer: formatCertificateDN(cert), signingSchemes: schemeList(schemes))
         }
 
-        return APKSignatureInfo(signer: signerDN)
+        if let v1 = v1Certificate(at: apkPath) {
+            schemes.append("v1")
+            return APKSignatureInfo(signer: formatCertificateDN(v1), signingSchemes: schemeList(schemes))
+        }
+
+        return APKSignatureInfo(signer: APKConstants.notAvailable, signingSchemes: schemeList(schemes))
+    }
+
+    private func schemeList(_ schemes: [String]) -> String {
+        schemes.isEmpty ? APKConstants.notAvailable : schemes.joined(separator: ", ")
+    }
+
+    private func v1Certificate(at apkPath: URL) -> SecCertificate? {
+        guard let zip = APKZipReader(url: apkPath) else { return nil }
+        let metaEntries = zip.entries.map(\.path).filter { $0.hasPrefix("META-INF/") }
+        guard metaEntries.contains("META-INF/MANIFEST.MF") else { return nil }
+        let signatureFiles = metaEntries.filter { $0.uppercased().hasSuffix(".SF") }
+        let signatureStems = Set(signatureFiles.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent.uppercased() })
+        let blockExtensions = [".RSA", ".DSA", ".EC"]
+        let blockPath = metaEntries.first { path in
+            let uppercased = path.uppercased()
+            guard blockExtensions.contains(where: { uppercased.hasSuffix($0) }) else { return false }
+            let stem = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent.uppercased()
+            return signatureStems.contains(stem)
+        }
+        guard let blockPath, let pkcs7Data = zip.extractEntry(path: blockPath) else { return nil }
+        if let cert = SecCertificateCreateWithData(nil, pkcs7Data as CFData) {
+            return cert
+        }
+        return certificateFromPKCS7Scan(pkcs7Data)
     }
 
     // MARK: - APK Signing Block (v2/v3)
@@ -62,16 +79,27 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
         for i in stride(from: tailBytes.count - 22, through: 0, by: -1) {
             if tailBytes[i] == 0x50 && tailBytes[i+1] == 0x4b &&
                tailBytes[i+2] == 0x05 && tailBytes[i+3] == 0x06 {
-                eocdOffset = i
-                break
+                let commentLength = Int(tailBytes[i+20]) | (Int(tailBytes[i+21]) << 8)
+                if commentLength == tailBytes.count - (i + 22) {
+                    eocdOffset = i
+                    break
+                }
             }
         }
         guard let eocd = eocdOffset, eocd + 21 < tailBytes.count else { return nil }
 
-        let cdOffset = UInt64(tailBytes[eocd+16]) |
+        var cdOffset = UInt64(tailBytes[eocd+16]) |
                         (UInt64(tailBytes[eocd+17]) << 8) |
                         (UInt64(tailBytes[eocd+18]) << 16) |
                         (UInt64(tailBytes[eocd+19]) << 24)
+        let cdSize = UInt64(tailBytes[eocd+12]) |
+                        (UInt64(tailBytes[eocd+13]) << 8) |
+                        (UInt64(tailBytes[eocd+14]) << 16) |
+                        (UInt64(tailBytes[eocd+15]) << 24)
+        if cdOffset == UInt64(UInt32.max) || cdSize == UInt64(UInt32.max),
+           let zip64Offset = zip64CentralDirectoryOffset(tailBytes: tailBytes, eocd: eocd, searchStart: searchStart, handle: handle) {
+            cdOffset = zip64Offset
+        }
 
         guard let magic = "APK Sig Block 42".data(using: .ascii), cdOffset >= 24 else { return nil }
 
@@ -101,7 +129,8 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
         let v3ID: UInt32 = 0xf05368c0
         var foundV2 = false
         var foundV3 = false
-        var firstCert: Data?
+        var v2Cert: Data?
+        var v3Cert: Data?
 
         var offset = 0
         while offset + 12 <= pairsData.count {
@@ -116,13 +145,13 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
 
             if pairID == v2ID {
                 foundV2 = true
-                if firstCert == nil {
-                    firstCert = extractCertFromSignerBlock(pairsData.subdata(in: dataStart..<(dataStart + dataLen)))
+                if v2Cert == nil {
+                    v2Cert = extractCertFromSignerBlock(pairsData.subdata(in: dataStart..<(dataStart + dataLen)))
                 }
             } else if pairID == v3ID {
                 foundV3 = true
-                if firstCert == nil {
-                    firstCert = extractCertFromSignerBlock(pairsData.subdata(in: dataStart..<(dataStart + dataLen)))
+                if v3Cert == nil {
+                    v3Cert = extractCertFromSignerBlock(pairsData.subdata(in: dataStart..<(dataStart + dataLen)))
                 }
             }
 
@@ -132,7 +161,24 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
         }
 
         guard foundV2 || foundV3 else { return nil }
-        return (foundV2, foundV3, firstCert)
+        return (foundV2, foundV3, v3Cert ?? v2Cert)
+    }
+
+    private func zip64CentralDirectoryOffset(tailBytes: [UInt8], eocd: Int, searchStart: UInt64, handle: FileHandle) -> UInt64? {
+        guard eocd >= 20 else { return nil }
+        let locator = eocd - 20
+        guard tailBytes[locator] == 0x50, tailBytes[locator + 1] == 0x4b,
+              tailBytes[locator + 2] == 0x06, tailBytes[locator + 3] == 0x07 else { return nil }
+        let relativeOffset = tailBytes[locator..<locator + 20].withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: 8, as: UInt64.self)
+        }
+        guard relativeOffset >= searchStart else { return nil }
+        handle.seek(toFileOffset: relativeOffset)
+        let record = handle.readData(ofLength: 56)
+        guard record.count == 56 else { return nil }
+        let signature = record.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
+        guard signature == 0x06064b50 else { return nil }
+        return record.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 48, as: UInt64.self) }
     }
 
     private func extractCertFromSignerBlock(_ data: Data) -> Data? {
@@ -167,17 +213,7 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
 
     // MARK: - PKCS#7 / DN
 
-    private func extractCertificateDN(from pkcs7Data: Data) -> String {
-        if let cert = SecCertificateCreateWithData(nil, pkcs7Data as CFData) {
-            return formatCertificateDN(cert)
-        }
-        if let dn = extractDNFromPKCS7(pkcs7Data) {
-            return dn
-        }
-        return APKConstants.notAvailable
-    }
-
-    private func extractDNFromPKCS7(_ data: Data) -> String? {
+    private func certificateFromPKCS7Scan(_ data: Data) -> SecCertificate? {
         let bytes = [UInt8](data)
         guard bytes.count > 4 else { return nil }
 
@@ -201,76 +237,64 @@ public final class DefaultAPKSignatureExtractor: APKSignatureExtractorProtocol {
                 continue
             }
 
-            guard let candidate = certData,
-                  let cert = SecCertificateCreateWithData(nil, candidate as CFData) else {
-                continue
+            if let candidate = certData, let cert = SecCertificateCreateWithData(nil, candidate as CFData) {
+                return cert
             }
-            return formatCertificateDN(cert)
         }
 
         return nil
     }
 
     private func formatCertificateDN(_ cert: SecCertificate) -> String {
-        let derData = SecCertificateCopyData(cert) as Data
-
-        if let fields = parseSubjectDNFields(derData) {
-            let cn = fields["CN"]
-            let org = fields["O"]
-            let ou = fields["OU"]
-
-            if let org, !org.isEmpty {
-                if let cn, !cn.isEmpty, cn.lowercased() != org.lowercased() {
-                    return "\(org) (\(cn))"
+        let subjectKey = kSecOIDX509V1SubjectName as String
+        if let values = SecCertificateCopyValues(cert, [kSecOIDX509V1SubjectName] as CFArray, nil) as? [String: Any],
+           let subject = values[subjectKey] as? [String: Any],
+           let items = subject[kSecPropertyKeyValue as String] as? [[String: Any]] {
+            var fields: [String: String] = [:]
+            for item in items {
+                guard let label = item[kSecPropertyKeyLabel as String] as? String else { continue }
+                let value = (item[kSecPropertyKeyValue as String] as? String) ?? ""
+                let normalized = Self.normalizedDNLabel(label)
+                if fields[normalized] == nil, !value.isEmpty {
+                    fields[normalized] = value
                 }
-                return org
             }
-            if let cn, !cn.isEmpty { return cn }
-            if let ou, !ou.isEmpty { return ou }
+            if let formatted = Self.formattedDN(fields) {
+                return formatted
+            }
         }
 
         if let summary = SecCertificateCopySubjectSummary(cert) as String?, !summary.isEmpty {
             return summary
         }
-
         return APKConstants.notAvailable
     }
 
-    private func parseSubjectDNFields(_ data: Data) -> [String: String]? {
-        let bytes = [UInt8](data)
-        guard bytes.count > 8 else { return nil }
-
-        let oidLabels: [[UInt8]: String] = [
-            [0x55, 0x04, 0x03]: "CN",
-            [0x55, 0x04, 0x06]: "C",
-            [0x55, 0x04, 0x07]: "L",
-            [0x55, 0x04, 0x08]: "ST",
-            [0x55, 0x04, 0x0A]: "O",
-            [0x55, 0x04, 0x0B]: "OU",
-        ]
-
-        var fields: [String: String] = [:]
-
-        for i in 0..<(bytes.count - 7) {
-            guard bytes[i] == 0x06, bytes[i + 1] == 0x03,
-                  bytes[i + 2] == 0x55, bytes[i + 3] == 0x04 else { continue }
-
-            let oid = Array(bytes[(i + 2)...(i + 4)])
-            guard let label = oidLabels[oid] else { continue }
-
-            let valueStart = i + 5
-            guard valueStart + 2 < bytes.count else { continue }
-            let tag = bytes[valueStart]
-            guard tag == 0x0C || tag == 0x13 || tag == 0x16 || tag == 0x1E else { continue }
-            let len = Int(bytes[valueStart + 1])
-            guard valueStart + 2 + len <= bytes.count else { continue }
-
-            let valueBytes = Data(bytes[(valueStart + 2)..<(valueStart + 2 + len)])
-            if let str = String(data: valueBytes, encoding: .utf8), fields[label] == nil {
-                fields[label] = str
-            }
+    private static func normalizedDNLabel(_ label: String) -> String {
+        switch label {
+        case "2.5.4.3", "CN", "Common Name":
+            return "CN"
+        case "2.5.4.10", "O", "Organization":
+            return "O"
+        case "2.5.4.11", "OU", "Organizational Unit":
+            return "OU"
+        default:
+            return label
         }
+    }
 
-        return fields.isEmpty ? nil : fields
+    private static func formattedDN(_ fields: [String: String]) -> String? {
+        let organization = fields["O"]
+        let commonName = fields["CN"]
+        let unit = fields["OU"]
+        if let organization, !organization.isEmpty {
+            if let commonName, !commonName.isEmpty, commonName.lowercased() != organization.lowercased() {
+                return "\(organization) (\(commonName))"
+            }
+            return organization
+        }
+        if let commonName, !commonName.isEmpty { return commonName }
+        if let unit, !unit.isEmpty { return unit }
+        return nil
     }
 }

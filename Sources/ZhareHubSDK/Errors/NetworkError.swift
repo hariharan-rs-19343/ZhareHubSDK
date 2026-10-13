@@ -25,6 +25,7 @@ public enum NetworkError: ErrorProtocol, Hashable {
         case notFound
         case internalServerError
         case badGateWay
+        case serviceUnavailable
         case invalidResponse
         case noPermissionToReadFile
         case fileDoesNotExist
@@ -100,6 +101,10 @@ public enum NetworkError: ErrorProtocol, Hashable {
             case .badGateWay:
                 return NSLocalizedString("Bad gateway.",
                               comment: "Occurs when an invalid response is received from an upstream server.")
+
+            case .serviceUnavailable:
+                return NSLocalizedString("Service unavailable.",
+                              comment: "Occurs when the server is temporarily unable to handle the request.")
                 
             case .invalidResponse:
                 return NSLocalizedString("Invalid or missing HTTP response",

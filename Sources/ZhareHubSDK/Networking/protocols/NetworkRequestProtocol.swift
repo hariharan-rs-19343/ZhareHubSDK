@@ -15,6 +15,7 @@ public protocol NetworkRequestProtocol: Sendable {
     var queryParameters: Parameters? { get }
     var encoding: ParameterEncoding { get }
     var body: Data? { get }
+    var contentType: String? { get }
     var timeoutInterval: TimeInterval { get }
     var cachePolicy: URLRequest.CachePolicy { get }
 }

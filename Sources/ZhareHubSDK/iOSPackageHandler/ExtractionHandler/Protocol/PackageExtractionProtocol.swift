@@ -19,7 +19,7 @@ public protocol PackageExtractionProtocol {
     func processPackage(sourceURL: URL) throws -> URL
    
     /// Read the app icon data from the extracted payload
-    func extractAppIcon(from appDirectory: URL, infoPlistData: Data, parser: PackageParserProtocol, fileName: String?) throws -> Data?
+    func extractAppIcon(from appDirectory: URL, infoPlistData: Data, parser: PackageParserProtocol, fileName: String?) async throws -> Data?
     
     /// Read the Information property data from the extracted payload
     func extractInfoPlistData(from appDirectory: URL) throws -> Data
@@ -35,21 +35,25 @@ public protocol PackageExtractionProtocol {
 public extension PackageExtractionProtocol {
     
     func extractInfoPlistData(from appDirectory: URL) throws -> Data {
-        let plistPath = appDirectory.appending(component: ZhareHubConstants.INFO_PLIST).path()
-        let cleanPath = plistPath.removingPercentEncoding ?? plistPath
-        guard FileManager.default.fileExists(atPath: cleanPath) else {
+        let plistURL = appDirectory.appending(component: ZhareHubConstants.INFO_PLIST)
+        guard FileURLPath.fileExists(plistURL) else {
             throw FileConversionError.invalidFilePath
         }
-        return try Data(contentsOf: URL(filePath: cleanPath))
+        return try Data(contentsOf: plistURL)
     }
     
     func extractMobileProvision(from appDirectory: URL) throws -> Data? {
-        let provisionPath = appDirectory.appending(component: ZhareHubConstants.EMBEDDED_MOBILE_PROVISION).path()
-        let cleanPath = provisionPath.removingPercentEncoding ?? provisionPath
-        guard FileManager.default.fileExists(atPath: cleanPath) else {
-            return nil
+        let fileNames = [
+            ZhareHubConstants.EMBEDDED_MOBILE_PROVISION,
+            ZhareHubConstants.EMBEDDED_PROVISION_PROFILE
+        ]
+        for fileName in fileNames {
+            let provisionURL = appDirectory.appending(component: fileName)
+            if FileURLPath.fileExists(provisionURL) {
+                return try Data(contentsOf: provisionURL)
+            }
         }
-        return try Data(contentsOf: URL(filePath: cleanPath))
+        return nil
     }
     
     func readAppIconName(from infoPlistData: Data, parser: PackageParserProtocol) throws -> String {
@@ -63,16 +67,11 @@ public extension PackageExtractionProtocol {
         return props.bundleIcon ?? ZhareHubConstants.DEFAULT_ICON_NAME
     }
     
-    func generateDefaultAppIconData(fileName: String?) -> Data? {
+    func generateDefaultAppIconData(fileName: String?) async -> Data? {
         let name = fileName ?? ""
-        let render: () -> PlatformImage? = {
-            MainActor.assumeIsolated {
-                LetterAvatarView.renderImage(name)
-            }
+        let image = await MainActor.run {
+            LetterAvatarView.renderImage(name)
         }
-        let uiImage: PlatformImage? = Thread.isMainThread
-            ? render()
-            : DispatchQueue.main.sync(execute: render)
-        return uiImage?.pngData()
+        return image?.pngData()
     }
 }

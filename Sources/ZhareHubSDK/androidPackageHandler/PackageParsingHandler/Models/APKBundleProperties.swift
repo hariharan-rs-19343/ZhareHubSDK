@@ -22,6 +22,8 @@ public struct APKBundleProperties: Hashable, Sendable {
     public let deviceCompatibility: [String]
     public let permissions: [String]
     public let usesFeatures: [String]
+    /// Form factors resolved from required and optional `uses-feature` entries.
+    public let supportedPlatforms: [APKSupportedPlatform]
 
     public init(
         appName: String,
@@ -33,7 +35,8 @@ public struct APKBundleProperties: Hashable, Sendable {
         targetSDK: String,
         deviceCompatibility: [String],
         permissions: [String],
-        usesFeatures: [String]
+        usesFeatures: [String],
+        supportedPlatforms: [APKSupportedPlatform] = []
     ) {
         self.appName = appName
         self.packageName = packageName
@@ -45,5 +48,6 @@ public struct APKBundleProperties: Hashable, Sendable {
         self.deviceCompatibility = deviceCompatibility
         self.permissions = permissions
         self.usesFeatures = usesFeatures
+        self.supportedPlatforms = supportedPlatforms
     }
 }

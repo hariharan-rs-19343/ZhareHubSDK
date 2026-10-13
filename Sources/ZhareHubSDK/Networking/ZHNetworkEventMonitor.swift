@@ -33,7 +33,7 @@ final class ZHNetworkEventMonitor: EventMonitor {
 
         logger.info(
             category: .networking,
-            message: "→ \(urlRequest.httpMethod ?? "?") \(urlRequest.url?.absoluteString ?? "?")",
+            message: "→ \(urlRequest.httpMethod ?? "?") \(Self.redactedURL(urlRequest.url))",
             metadata: ["headerNames": headerNames, "queryKeys": queryKeys, "bodyBytes": "\(bodyBytes)"]
         )
     }
@@ -42,7 +42,7 @@ final class ZHNetworkEventMonitor: EventMonitor {
         let duration = String(format: "%.3f", metrics.taskInterval.duration)
         logger.debug(
             category: .networking,
-            message: "\(request.request?.httpMethod ?? "?") \(request.request?.url?.absoluteString ?? "?") took \(duration)s",
+            message: "\(request.request?.httpMethod ?? "?") \(Self.redactedURL(request.request?.url)) took \(duration)s",
             metadata: ["durationSeconds": duration]
         )
     }
@@ -69,11 +69,22 @@ final class ZHNetworkEventMonitor: EventMonitor {
         if let size { metadata["responseBytes"] = "\(size)" }
         if let error { metadata["error"] = error.localizedDescription }
 
-        let message = "← \(request.request?.httpMethod ?? "?") \(request.request?.url?.absoluteString ?? "?")"
+        let message = "← \(request.request?.httpMethod ?? "?") \(Self.redactedURL(request.request?.url))"
         if error == nil {
             logger.info(category: .networking, message: message, metadata: metadata)
         } else {
             logger.error(category: .networking, message: message, metadata: metadata)
         }
+    }
+
+    private static func redactedURL(_ url: URL?) -> String {
+        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "?"
+        }
+        components.user = nil
+        components.password = nil
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? "?"
     }
 }

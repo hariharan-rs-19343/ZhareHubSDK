@@ -7,6 +7,7 @@ let package = Package(
     name: "ZhareHubSDK",
     platforms: [
         .iOS(.v26),
+        .macCatalyst(.v26),
         .macOS(.v26),
     ],
     products: [
@@ -19,16 +20,14 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/hariharan-rs-19343/SUICore.git", branch: "main"),
         .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.10.0"),
-        .package(url: "https://github.com/marmelroy/Zip.git", from: "2.1.2"),
-        .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.19"),
-        .package(path: "../ZhareHubNetworkLayer")
+        .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.19")
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "ZhareHubSDK",
-            dependencies: ["SUICore", "Alamofire", "Zip", "ZIPFoundation", "ZhareHubNetworkLayer"]
+            dependencies: ["SUICore", "Alamofire", "ZIPFoundation"]
         ),
         .testTarget(
             name: "ZhareHubSDKTests",

@@ -24,7 +24,12 @@ public final class DefaultPackageParser: PackageParserProtocol {
     }
     
     public func loadBundleProperties(with plistDictionary: [String: Any]) -> BundleProperties? {
-        return BundleProperties(from: plistDictionary)
+        loadBundleProperties(with: plistDictionary, in: nil)
+    }
+
+    public func loadBundleProperties(with plistDictionary: [String: Any], in appDirectory: URL?) -> BundleProperties? {
+        let watchAppPresent = appDirectory.map(SupportedPlatformResolver.watchAppExists(in:)) ?? false
+        return BundleProperties(from: plistDictionary, watchAppPresent: watchAppPresent)
     }
     
     public func loadMobileProvision(with plist: [String: Any]) -> MobileProvision? {

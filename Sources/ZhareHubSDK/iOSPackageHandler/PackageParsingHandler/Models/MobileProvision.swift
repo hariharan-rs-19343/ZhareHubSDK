@@ -13,8 +13,8 @@ public struct MobileProvision: Hashable {
     public let creationDate: Date
     public let expirationDate: Date
     public let teamName: String
-    var isExpired: Bool {
-        isMobileProvisionValid(expirationDate)
+    public var isExpired: Bool {
+        expirationDate < Date()
     }
     
     enum CodingKeys: String, CodingKey {
@@ -41,18 +41,14 @@ public struct MobileProvision: Hashable {
         self.expirationDate = expirationDate
         self.teamName = teamName
     }
-    
-    private func isMobileProvisionValid(_ expiredDate: Date) -> Bool {
-        return expiredDate < Date()
-    }
 }
 
 public struct Entitlements: Codable {
-    let teamIdentifier: [String]?
-    let getTaskAllow: Bool?
-    let applicationIdentifier: String?
-    let apsEnvironment: String?
-    let keychainAccessGroups: [String]?
+    public let teamIdentifier: [String]?
+    public let getTaskAllow: Bool?
+    public let applicationIdentifier: String?
+    public let apsEnvironment: String?
+    public let keychainAccessGroups: [String]?
     
     enum CodingKeys: String, CodingKey {
         case teamIdentifier = "com.apple.developer.team-identifier"

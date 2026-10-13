@@ -13,27 +13,11 @@ public struct DefaultAPKBadgingParser: APKBadgingParserProtocol {
     public init() {}
 
     public func parseAppLabel(from output: String) -> String {
-        let pattern = "application-label:'([^']*)'"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return APKConstants.notAvailable }
-        let nsOutput = output as NSString
-        guard let match = regex.firstMatch(in: output, range: NSRange(location: 0, length: nsOutput.length)),
-              match.numberOfRanges >= 2 else { return APKConstants.notAvailable }
-        return nsOutput.substring(with: match.range(at: 1))
+        quotedValue(in: output, key: "application-label") ?? APKConstants.notAvailable
     }
 
     public func parseSingleValue(from output: String, key: String) -> String {
-        let escaped = NSRegularExpression.escapedPattern(for: key)
-        let patterns = ["\(escaped)='([^']*)'", "\(escaped):'([^']*)'"]
-
-        let nsOutput = output as NSString
-        for pattern in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: output, range: NSRange(location: 0, length: nsOutput.length)),
-               match.numberOfRanges >= 2 {
-                return nsOutput.substring(with: match.range(at: 1))
-            }
-        }
-        return APKConstants.notAvailable
+        quotedValue(in: output, key: key) ?? APKConstants.notAvailable
     }
 
     public func parseDeviceCompatibility(from output: String) -> [String] {
@@ -82,6 +66,24 @@ public struct DefaultAPKBadgingParser: APKBadgingParserProtocol {
         return required
     }
 
+    /// `uses-feature` names marked `required='false'` (e.g. optional leanback
+    /// on a phone app that also supports TV).
+    public func parseOptionalFeatures(from output: String) -> [String] {
+        var optional: [String] = []
+
+        for line in output.components(separatedBy: "\n") {
+            guard line.contains("uses-feature:"), line.contains("required='false'") else { continue }
+
+            guard let regex = try? NSRegularExpression(pattern: "name='([^']*)'"),
+                  let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)),
+                  match.numberOfRanges >= 2 else { continue }
+
+            optional.append((line as NSString).substring(with: match.range(at: 1)))
+        }
+
+        return optional
+    }
+
     public func parsePermissions(from output: String) -> [String] {
         let pattern = "uses-permission.*name='([^']*)'"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
@@ -108,17 +110,75 @@ public struct DefaultAPKBadgingParser: APKBadgingParserProtocol {
     }
 
     public func loadProperties(from output: String) -> APKBundleProperties {
+        loadProperties(from: output, fileName: "")
+    }
+
+    public func loadProperties(from output: String, fileName: String) -> APKBundleProperties {
+        let requiredFeatures = parseFeatures(from: output)
         return APKBundleProperties(
-            appName: parseAppLabel(from: output),
+            appName: fileName,
             packageName: parseAppLabel(from: output),
             packageIdentifier: parseSingleValue(from: output, key: "package: name"),
             versionName: parseSingleValue(from: output, key: "versionName"),
             versionCode: parseSingleValue(from: output, key: "versionCode"),
-            minSDK: parseSingleValue(from: output, key: "minSdkVersion"),
+            // aapt2 prints `minSdkVersion:'..'`; legacy aapt prints `sdkVersion:'..'`.
+            minSDK: quotedValue(in: output, key: "minSdkVersion")
+                ?? parseSingleValue(from: output, key: "sdkVersion"),
             targetSDK: parseSingleValue(from: output, key: "targetSdkVersion"),
             deviceCompatibility: parseDeviceCompatibility(from: output),
             permissions: parsePermissions(from: output),
-            usesFeatures: parseFeatures(from: output)
+            usesFeatures: requiredFeatures,
+            supportedPlatforms: APKSupportedPlatformResolver.resolve(
+                required: requiredFeatures,
+                optional: parseOptionalFeatures(from: output)
+            )
         )
+    }
+
+    private func quotedValue(in text: String, key: String) -> String? {
+        guard let keyRange = rangeOfKey(key, in: text) else { return nil }
+        var remainder = text[keyRange.upperBound...]
+        while let first = remainder.first, first == " " || first == ":" || first == "=" {
+            remainder.removeFirst()
+        }
+        guard remainder.first == "'" else { return nil }
+        remainder.removeFirst()
+
+        var value = ""
+        var isEscaped = false
+        for character in remainder {
+            if isEscaped {
+                value.append(character)
+                isEscaped = false
+                continue
+            }
+            if character == "\\" {
+                isEscaped = true
+                continue
+            }
+            if character == "'" {
+                return value
+            }
+            value.append(character)
+        }
+        return nil
+    }
+
+    private func rangeOfKey(_ key: String, in text: String) -> Range<String.Index>? {
+        var search = text.startIndex
+        while let found = text.range(of: key, range: search..<text.endIndex) {
+            let hasBoundary: Bool
+            if found.lowerBound == text.startIndex {
+                hasBoundary = true
+            } else {
+                let previous = text[text.index(before: found.lowerBound)]
+                hasBoundary = !previous.isLetter && previous != "_"
+            }
+            if hasBoundary {
+                return found
+            }
+            search = found.upperBound
+        }
+        return nil
     }
 }

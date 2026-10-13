@@ -39,7 +39,7 @@ public final class APKExtractionStrategy: APKExtractionProtocol {
         // 1. aapt2 dump badging
         let badgingResult = try await shell.run(
             executablePath: aapt2Path,
-            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.badging.rawValue, apkURL.path],
+            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.badging.rawValue, apkURL.path(percentEncoded: false)],
             environment: nil,
             workingDirectory: nil,
             timeout: 30
@@ -55,7 +55,7 @@ public final class APKExtractionStrategy: APKExtractionProtocol {
         let badging = badgingResult.output
 
         // 2. Parse badging
-        let properties = parser.loadProperties(from: badging)
+        let properties = parser.loadProperties(from: badging, fileName: fileName)
 
         // 3. Parallel icon + signature extraction
         async let iconTask: APKIconResult? = iconExtractor.extractIcon(
@@ -74,7 +74,7 @@ public final class APKExtractionStrategy: APKExtractionProtocol {
         let signature = await signatureTask
 
         // 4. Raw APK data (best-effort)
-        let appData = try? Data(contentsOf: apkURL)
+        let appData = try ExtractionWorkspace.readBounded(contentsOf: apkURL)
 
         // 5. Icon Data (PNG) for parity with iOS PackageExtractionModel
         let iconData = await Task.detached { () -> Data? in

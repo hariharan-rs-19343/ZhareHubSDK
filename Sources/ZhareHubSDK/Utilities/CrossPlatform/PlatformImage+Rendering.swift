@@ -38,7 +38,7 @@ extension PlatformImage {
         #if canImport(UIKit)
         CGSize(width: size.width * scale, height: size.height * scale)
         #else
-        guard let rep = representations.first else { return size }
+        guard let rep = representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 else { return size }
         return CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
         #endif
     }

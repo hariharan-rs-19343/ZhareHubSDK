@@ -77,7 +77,7 @@ public final class APKExtractionHandler {
             }
             logger.debug(category: .custom("androidParsing"), message: "Resolved strategy \(type(of: strategy))")
 
-        let model = try await strategy.extractMetadata(
+            let model = try await strategy.extractMetadata(
                 from: url,
                 fileName: fileName,
                 shell: shell,

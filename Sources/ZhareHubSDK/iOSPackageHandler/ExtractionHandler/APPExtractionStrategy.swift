@@ -6,94 +6,117 @@
 //
 
 import Foundation
-import SUICore
 import UniformTypeIdentifiers
-internal import Zip
+internal import ZIPFoundation
 
 public final class APPExtractionStrategy: PackageExtractionProtocol {
     private let fileManager = FileManager.default
-    
-    private var appCacheDirectory: URL {
-        ZFFileManager.shared.appCacheDirectory
-    }
-    
+
     public init() {}
-    
+
     public func canHandle(url: URL) -> Bool {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
         return type == .app || type == .application
     }
-    
+
     public func processPackage(sourceURL: URL) throws -> URL {
-        try ZFFileManager.shared.clearCache()
-        return sourceURL // .app bundle — return the URL directly, no extraction needed
+        sourceURL
     }
-    
-    public func extractAppIcon(from appDirectory: URL, infoPlistData: Data, parser: any PackageParserProtocol, fileName: String?) throws -> Data? {
-        // .app bundles may store icons differently (e.g., in Assets.car or as .icns on macOS)
-        // First try the standard approach
-        if let iconData = try? standardIconExtraction(from: appDirectory, infoPlistData: infoPlistData, parser: parser, fileName: fileName) {
+
+    public func extractAppIcon(from appDirectory: URL, infoPlistData: Data, parser: any PackageParserProtocol, fileName: String?) async throws -> Data? {
+        if let iconData = try? await standardIconExtraction(from: appDirectory, infoPlistData: infoPlistData, parser: parser) {
             return iconData
         }
-        
-        // Fallback: look for .icns files (macCatalyst / macOS .app bundles)
+
         let resourcesDir = appDirectory.appending(component: "Resources")
-        if fileManager.fileExists(atPath: resourcesDir.path()) {
-            let resourceContents = try fileManager.contentsOfDirectory(atPath: resourcesDir.path())
+        if FileURLPath.fileExists(resourcesDir, fileManager: fileManager) {
+            let resourceContents = try fileManager.contentsOfDirectory(atPath: FileURLPath.decoded(resourcesDir))
             if let icnsFile = resourceContents.first(where: { $0.hasSuffix(".icns") }) {
-                let icnsPath = resourcesDir.appending(component: icnsFile)
-                return try Data(contentsOf: icnsPath)
+                return try Data(contentsOf: resourcesDir.appending(component: icnsFile))
             }
         }
-       
-        // Final fallback: generate default
-        return generateDefaultAppIconData(fileName: fileName)
+
+        return await generateDefaultAppIconData(fileName: fileName)
     }
-    
+
     public func extractMobileProvision(from appDirectory: URL) throws -> Data? {
-        // .app bundles on macOS use embedded.provisionprofile (not .mobileprovision)
-        let provisionProfilePath = appDirectory.appending(component: ZhareHubConstants.EMBEDDED_PROVISION_PROFILE).path()
-        let cleanPath = provisionProfilePath.removingPercentEncoding ?? provisionProfilePath
-        if fileManager.fileExists(atPath: cleanPath) {
-            return try Data(contentsOf: URL(filePath: cleanPath))
-        }
-        
-        return nil
+        try PackageExtractionFallback.mobileProvision(in: appDirectory)
     }
-    
+
     public func prepareAppData(from sourceURL: URL) throws -> Data? {
-        // .app needs to be zipped first before it can be uploaded as data
-        let zipDestination = appCacheDirectory
-            .appendingPathComponent(sourceURL.deletingPathExtension().lastPathComponent)
-            .appendingPathExtension(for: .zip)
-        
-        try Zip.zipFiles(paths: [sourceURL], zipFilePath: zipDestination, password: nil, progress: nil)
-        return try Data(contentsOf: zipDestination)
+        let workspace = try ExtractionWorkspace.make()
+        let archiveName = ExtractionWorkspace.singlePathComponent(sourceURL.deletingPathExtension().lastPathComponent) ?? "application"
+        let zipDestination = workspace.appending(component: archiveName).appendingPathExtension("zip")
+        try Self.zipBundle(at: sourceURL, to: zipDestination)
+        return try ExtractionWorkspace.readBounded(contentsOf: zipDestination)
+    }
+
+    private static func zipBundle(at sourceURL: URL, to destination: URL) throws {
+        let root = sourceURL.standardizedFileURL
+        let archive = try Archive(url: destination, accessMode: .create)
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isSymbolicLinkKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            throw FileConversionError.fileReadFailed
+        }
+
+        let rootPath = FileURLPath.decoded(root)
+        for case let fileURL as URL in enumerator {
+            let values = try fileURL.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey])
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            let standardized = fileURL.standardizedFileURL
+            let standardizedPath = FileURLPath.decoded(standardized)
+            guard standardizedPath == rootPath || standardizedPath.hasPrefix(rootPath + "/") else {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values.isRegularFile == true else { continue }
+            let relativePath = String(standardizedPath.dropFirst(rootPath.count + 1))
+            try archive.addEntry(with: relativePath, fileURL: standardized)
+        }
     }
 }
 
-// MARK: - Private Helpers
+private enum PackageExtractionFallback {
+    static func mobileProvision(in appDirectory: URL) throws -> Data? {
+        let fileNames = [
+            ZhareHubConstants.EMBEDDED_MOBILE_PROVISION,
+            ZhareHubConstants.EMBEDDED_PROVISION_PROFILE
+        ]
+        for fileName in fileNames {
+            let provisionURL = appDirectory.appending(component: fileName)
+            if FileURLPath.fileExists(provisionURL) {
+                return try Data(contentsOf: provisionURL)
+            }
+        }
+        return nil
+    }
+}
+
 extension APPExtractionStrategy {
-    
-    private func standardIconExtraction(from appDirectory: URL, infoPlistData: Data, parser: PackageParserProtocol, fileName: String?) throws -> Data? {
+    private func standardIconExtraction(from appDirectory: URL, infoPlistData: Data, parser: PackageParserProtocol) async throws -> Data? {
         let result = parser.deserializePlist(infoPlistData)
         guard let dict = try result.get(),
-              let props = parser.loadBundleProperties(with: dict),
+              let props = parser.loadBundleProperties(with: dict, in: appDirectory),
               let iconName = props.bundleIcon
         else {
             return nil
         }
-        
-        let dirPath = appDirectory.path().removingPercentEncoding ?? appDirectory.path()
-        guard let iconSubPath = try fileManager.contentsOfDirectory(atPath: dirPath)
+
+        guard let iconSubPath = try fileManager.contentsOfDirectory(atPath: FileURLPath.decoded(appDirectory))
             .first(where: { $0.contains(iconName) })
         else {
             return nil
         }
-        
-        let iconPath = appDirectory.appending(component: iconSubPath).path()
-        let cleanPath = iconPath.removingPercentEncoding ?? iconPath
-        guard fileManager.fileExists(atPath: cleanPath) else { return nil }
-        return try Data(contentsOf: URL(filePath: cleanPath))
+
+        let iconURL = appDirectory.appending(component: iconSubPath)
+        guard FileURLPath.fileExists(iconURL, fileManager: fileManager) else { return nil }
+        return try Data(contentsOf: iconURL)
     }
 }

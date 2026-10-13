@@ -418,6 +418,11 @@ enum VectorDrawableXML {
         case centerColor
         case endColor
         case offset
+        case inset
+        case insetLeft
+        case insetRight
+        case insetTop
+        case insetBottom
     }
 
     /// `android:fillType="evenOdd"` — aapt2 emits enum attributes as integers.
@@ -575,7 +580,6 @@ struct XmlTreeParser {
     static func parseGradient(from root: XmlNode) -> VectorPaint? {
         guard root.tag == VectorDrawableXML.Tag.gradient.rawValue else { return nil }
         typealias Attr = VectorDrawableXML.Attribute
-        func value(_ attr: Attr) -> CGFloat? { parseDimension(root.attributes[attr.rawValue]) }
         func color(_ attr: Attr) -> PlatformColor? { parseColor(root.attributes[attr.rawValue]) }
 
         var stops: [VectorPaint.Stop] = root.children.compactMap { item in
@@ -589,8 +593,50 @@ struct XmlTreeParser {
             if let end = color(.endColor) { stops.append(.init(color: end, offset: 1)) }
         }
         guard let first = stops.first else { return nil }
-
         let type = VectorDrawableXML.GradientType(rawValue: root.attributes[Attr.type.rawValue] ?? "") ?? .linear
+        return gradientPaint(type: type, root: root, stops: stops, fallback: first)
+    }
+
+    struct UnresolvedStop {
+        var color: PlatformColor?
+        var colorRef: String?
+        var offset: CGFloat
+    }
+
+    static func unresolvedGradientStops(from root: XmlNode) -> (type: VectorDrawableXML.GradientType, stops: [UnresolvedStop])? {
+        guard root.tag == VectorDrawableXML.Tag.gradient.rawValue else { return nil }
+        typealias Attr = VectorDrawableXML.Attribute
+        var stops: [UnresolvedStop] = root.children.compactMap { item in
+            guard item.tag == VectorDrawableXML.Tag.item.rawValue else { return nil }
+            let offset = parseDimension(item.attributes[Attr.offset.rawValue]) ?? 0
+            if let color = parseColor(item.attributes[Attr.color.rawValue]) {
+                return UnresolvedStop(color: color, colorRef: nil, offset: offset)
+            }
+            if let colorRef = resourceReference(item.attributes[Attr.color.rawValue]) {
+                return UnresolvedStop(color: nil, colorRef: colorRef, offset: offset)
+            }
+            return nil
+        }
+        if stops.isEmpty {
+            func append(_ attr: Attr, offset: CGFloat) {
+                if let color = parseColor(root.attributes[attr.rawValue]) {
+                    stops.append(UnresolvedStop(color: color, colorRef: nil, offset: offset))
+                } else if let colorRef = resourceReference(root.attributes[attr.rawValue]) {
+                    stops.append(UnresolvedStop(color: nil, colorRef: colorRef, offset: offset))
+                }
+            }
+            append(.startColor, offset: 0)
+            append(.centerColor, offset: 0.5)
+            append(.endColor, offset: 1)
+        }
+        guard !stops.isEmpty else { return nil }
+        let type = VectorDrawableXML.GradientType(rawValue: root.attributes[Attr.type.rawValue] ?? "") ?? .linear
+        return (type, stops)
+    }
+
+    static func gradientPaint(type: VectorDrawableXML.GradientType, root: XmlNode, stops: [VectorPaint.Stop], fallback: VectorPaint.Stop) -> VectorPaint {
+        typealias Attr = VectorDrawableXML.Attribute
+        func value(_ attr: Attr) -> CGFloat? { parseDimension(root.attributes[attr.rawValue]) }
         switch type {
         case .linear:
             return .linearGradient(
@@ -605,8 +651,7 @@ struct XmlTreeParser {
                 stops: stops
             )
         case .sweep:
-            // Core Graphics has no conic gradient; approximate with the first stop.
-            return .color(first.color)
+            return .color(fallback.color)
         }
     }
 
@@ -784,6 +829,8 @@ final class APKVectorIconParser: @unchecked Sendable {
     private let aapt2Path: String
     private let shell: ShellExecutorProtocol
     private var resourceDumpCache: [String: String?] = [:]
+    private var visitedDrawables: Set<String> = []
+    private(set) var didFailToolInvocation = false
 
     init(aapt2Path: String, shell: ShellExecutorProtocol) {
         self.aapt2Path = aapt2Path
@@ -793,18 +840,25 @@ final class APKVectorIconParser: @unchecked Sendable {
     func renderIcon(from apkPath: URL,
                     iconXmlPath: String,
                     outputSize: CGSize = CGSize(width: 192, height: 192)) async -> PlatformImage? {
-        guard let xmlOutput = await dumpXmlTree(apkPath: apkPath, filePath: iconXmlPath),
-              let root = XmlTreeParser.parse(xmlOutput) else {
+        guard visitedDrawables.count < 8, visitedDrawables.insert(iconXmlPath).inserted else {
             return nil
         }
-
-        switch root.tag {
-        case VectorDrawableXML.Tag.adaptiveIcon.rawValue:
-            return await renderAdaptiveIcon(root, apkPath: apkPath, outputSize: outputSize)
-        case VectorDrawableXML.Tag.vector.rawValue:
-            return await renderVector(root, apkPath: apkPath, outputSize: outputSize)
-        default:
+        switch await dumpXmlTreeResult(apkPath: apkPath, filePath: iconXmlPath) {
+        case .failed:
+            didFailToolInvocation = true
             return nil
+        case .missing:
+            return nil
+        case .value(let xmlOutput):
+            guard let root = XmlTreeParser.parse(xmlOutput) else { return nil }
+            switch root.tag {
+            case VectorDrawableXML.Tag.adaptiveIcon.rawValue:
+                return await renderAdaptiveIcon(root, apkPath: apkPath, outputSize: outputSize)
+            case VectorDrawableXML.Tag.vector.rawValue:
+                return await renderVector(root, apkPath: apkPath, outputSize: outputSize)
+            default:
+                return nil
+            }
         }
     }
 
@@ -845,7 +899,9 @@ final class APKVectorIconParser: @unchecked Sendable {
             if child.tag == VectorDrawableXML.Tag.vector.rawValue {
                 return await renderVector(child, apkPath: apkPath, outputSize: outputSize)
             } else if child.tag == VectorDrawableXML.Tag.inset.rawValue {
-                return await resolveLayer(child, apkPath: apkPath, outputSize: outputSize)
+                if let image = await resolveLayer(child, apkPath: apkPath, outputSize: outputSize) {
+                    return await insetImage(image, node: child, canvas: outputSize)
+                }
             } else if child.tag == VectorDrawableXML.Tag.color.rawValue || child.tag == VectorDrawableXML.Tag.drawable.rawValue {
                 if let colorStr = child.attributes[VectorDrawableXML.Attribute.color.rawValue] ?? child.attributes[VectorDrawableXML.Attribute.drawable.rawValue],
                    let color = XmlTreeParser.parseColor(colorStr) {
@@ -917,7 +973,11 @@ final class APKVectorIconParser: @unchecked Sendable {
 
     /// Resolves a `fillColor` / `strokeColor` resource reference to a color or
     /// gradient (aapt2 compiles inline `<aapt:attr>` gradients into such resources).
+    private var resolvingPaints: Set<String> = []
+
     private func resolvePaint(_ ref: String, apkPath: URL) async -> VectorPaint? {
+        guard resolvingPaints.insert(ref).inserted else { return nil }
+        defer { resolvingPaints.remove(ref) }
         let cleanRef = ref.replacingOccurrences(of: "@", with: "")
         if let hex = VectorDrawableXML.frameworkColors[cleanRef] {
             return XmlTreeParser.parseColor(hex).map(VectorPaint.color)
@@ -931,7 +991,7 @@ final class APKVectorIconParser: @unchecked Sendable {
             guard let xml = await dumpXmlTree(apkPath: apkPath, filePath: path),
                   let root = XmlTreeParser.parse(xml) else { continue }
 
-            if let gradient = XmlTreeParser.parseGradient(from: root) {
+            if let gradient = await resolveGradient(from: root, apkPath: apkPath) {
                 return gradient
             }
             // Color state list: the last item is the default state.
@@ -942,6 +1002,43 @@ final class APKVectorIconParser: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    private func resolveGradient(from root: XmlTreeParser.XmlNode, apkPath: URL) async -> VectorPaint? {
+        guard let unresolved = XmlTreeParser.unresolvedGradientStops(from: root) else { return nil }
+        var stops: [VectorPaint.Stop] = []
+        for stop in unresolved.stops {
+            if let color = stop.color {
+                stops.append(.init(color: color, offset: stop.offset))
+            } else if let colorRef = stop.colorRef, case .color(let color) = await resolvePaint(colorRef, apkPath: apkPath) {
+                stops.append(.init(color: color, offset: stop.offset))
+            }
+        }
+        guard stops.count == unresolved.stops.count, let first = stops.first else { return nil }
+        return XmlTreeParser.gradientPaint(type: unresolved.type, root: root, stops: stops, fallback: first)
+    }
+
+    private func insetImage(_ image: PlatformImage, node: XmlTreeParser.XmlNode, canvas: CGSize) async -> PlatformImage {
+        func dimension(_ attribute: VectorDrawableXML.Attribute) -> CGFloat {
+            XmlTreeParser.parseDimension(node.attributes[attribute.rawValue]) ?? 0
+        }
+        let uniform = dimension(.inset)
+        let left = dimension(.insetLeft) > 0 ? dimension(.insetLeft) : uniform
+        let right = dimension(.insetRight) > 0 ? dimension(.insetRight) : uniform
+        let top = dimension(.insetTop) > 0 ? dimension(.insetTop) : uniform
+        let bottom = dimension(.insetBottom) > 0 ? dimension(.insetBottom) : uniform
+        let scale = canvas.width / 108
+        return await MainActor.run {
+            PlatformImage.rendered(size: canvas) { _ in
+                let rect = CGRect(
+                    x: left * scale,
+                    y: top * scale,
+                    width: max(canvas.width - (left + right) * scale, 1),
+                    height: max(canvas.height - (top + bottom) * scale, 1)
+                )
+                image.draw(in: rect)
+            }
+        }
     }
 
     /// Looks `ref` (`@0x7f…`) up in `aapt2 dump resources` and returns its file
@@ -1032,29 +1129,63 @@ final class APKVectorIconParser: @unchecked Sendable {
     // MARK: - aapt2 calls
 
     private func dumpXmlTree(apkPath: URL, filePath: String) async -> String? {
-        let result = try? await shell.run(
-            executablePath: aapt2Path,
-            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.xmltree.rawValue, apkPath.path, APKConstants.AAPT2.fileFlag, filePath],
-            environment: nil,
-            workingDirectory: nil,
-            timeout: 30
-        )
-        guard let output = result?.output, !output.isEmpty else { return nil }
-        return output
+        switch await dumpXmlTreeResult(apkPath: apkPath, filePath: filePath) {
+        case .value(let output):
+            return output
+        case .failed:
+            didFailToolInvocation = true
+            return nil
+        case .missing:
+            return nil
+        }
+    }
+
+    private enum DumpResult {
+        case value(String)
+        case failed
+        case missing
+    }
+
+    private func dumpXmlTreeResult(apkPath: URL, filePath: String) async -> DumpResult {
+        do {
+            let result = try await shell.run(
+                executablePath: aapt2Path,
+                arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.xmltree.rawValue, apkPath.path(percentEncoded: false), APKConstants.AAPT2.fileFlag, filePath],
+                environment: nil,
+                workingDirectory: nil,
+                timeout: 30
+            )
+            guard result.isSuccess else { return .failed }
+            guard !result.output.isEmpty else { return .missing }
+            return .value(result.output)
+        } catch {
+            return .failed
+        }
     }
 
     private func dumpResources(apkPath: URL) async -> String? {
         let key = apkPath.path
         if let cached = resourceDumpCache[key] { return cached }
-        let result = try? await shell.run(
-            executablePath: aapt2Path,
-            arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.resources.rawValue, apkPath.path],
-            environment: nil,
-            workingDirectory: nil,
-            timeout: 15
-        )
-        let output = (result?.output.isEmpty == false) ? result?.output : nil
-        resourceDumpCache[key] = output
-        return output
+        let result: ShellResult
+        do {
+            result = try await shell.run(
+                executablePath: aapt2Path,
+                arguments: [APKConstants.AAPT2.dumpVerb, APKConstants.AAPT2.Command.resources.rawValue, apkPath.path(percentEncoded: false)],
+                environment: nil,
+                workingDirectory: nil,
+                timeout: 30
+            )
+        } catch {
+            didFailToolInvocation = true
+            resourceDumpCache[key] = nil
+            return nil
+        }
+        guard result.isSuccess, !result.output.isEmpty else {
+            didFailToolInvocation = true
+            resourceDumpCache[key] = nil
+            return nil
+        }
+        resourceDumpCache[key] = result.output
+        return result.output
     }
 }

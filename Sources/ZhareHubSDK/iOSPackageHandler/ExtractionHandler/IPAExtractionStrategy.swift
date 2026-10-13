@@ -11,55 +11,44 @@ import UniformTypeIdentifiers
 
 public final class IPAExtractionStrategy: PackageExtractionProtocol {
     private let archiveOperations: ArchiveOperationsProtocol
-    private let packageConversion: PackageConversionProtocol
-    private let fileManager = FileManager.default
-    
-    private var appCacheDirectory: URL {
-        ZFFileManager.shared.appCacheDirectory
-    }
-    
-    init(archiveOperations: ArchiveOperationsProtocol = DefaultArchiveOperations(),
-         packageConversion: PackageConversionProtocol = DefaultPackageConversion()) {
+
+    init(archiveOperations: ArchiveOperationsProtocol = DefaultArchiveOperations()) {
         self.archiveOperations = archiveOperations
-        self.packageConversion = packageConversion
     }
-    
+
     public func canHandle(url: URL) -> Bool {
         UTType(filenameExtension: url.pathExtension) == .ipa
     }
-    
+
     public func processPackage(sourceURL: URL) throws -> URL {
-        try ZFFileManager.shared.clearCache()
-        let zipLocation = try packageConversion.prepareArchiveFormat(of: sourceURL)
-        try archiveOperations.extractArchive(file: zipLocation, to: appCacheDirectory, overwrite: true, password: nil)
-        return appCacheDirectory.appending(path: ZhareHubConstants.PAYLOAD)
+        let workspace = try ExtractionWorkspace.make()
+        let archiveName = ExtractionWorkspace.singlePathComponent(sourceURL.deletingPathExtension().lastPathComponent) ?? "package"
+        let zipLocation = workspace.appending(component: archiveName).appendingPathExtension("zip")
+        try FileManager.default.copyItem(at: sourceURL, to: zipLocation)
+        try archiveOperations.extractArchive(file: zipLocation, to: workspace, overwrite: true, password: nil)
+        return workspace.appending(component: ZhareHubConstants.PAYLOAD)
     }
-    
-    public func extractAppIcon(from appDirectory: URL, infoPlistData: Data, parser: any PackageParserProtocol, fileName: String?) throws -> Data? {
+
+    public func extractAppIcon(from appDirectory: URL, infoPlistData: Data, parser: any PackageParserProtocol, fileName: String?) async throws -> Data? {
         let iconName = try readAppIconName(from: infoPlistData, parser: parser)
-        return try readAppIconData(from: appDirectory, iconName: iconName, fileName: fileName)
+        return try await readAppIconData(from: appDirectory, iconName: iconName, fileName: fileName)
     }
-    
-    public func readAppIconData(from appDirectory: URL, iconName: String, fileName: String?) throws -> Data? {
-        let dirPath = appDirectory.path().removingPercentEncoding ?? appDirectory.path()
-        
-        guard let iconSubPath = try? FileManager.default.contentsOfDirectory(atPath: dirPath)
+
+    public func readAppIconData(from appDirectory: URL, iconName: String, fileName: String?) async throws -> Data? {
+        guard let iconSubPath = try? FileManager.default.contentsOfDirectory(atPath: FileURLPath.decoded(appDirectory))
             .first(where: { $0.contains(iconName) })
         else {
-            return generateDefaultAppIconData(fileName: fileName)
+            return await generateDefaultAppIconData(fileName: fileName)
         }
-        
-        let iconFullPath = appDirectory.appending(component: iconSubPath).path()
-        let cleanPath = iconFullPath.removingPercentEncoding ?? iconFullPath
-        
-        guard FileManager.default.fileExists(atPath: cleanPath) else {
-            return generateDefaultAppIconData(fileName: fileName)
+
+        let iconURL = appDirectory.appending(component: iconSubPath)
+        guard FileURLPath.fileExists(iconURL) else {
+            return await generateDefaultAppIconData(fileName: fileName)
         }
-        
-        return try Data(contentsOf: URL(filePath: cleanPath))
+        return try Data(contentsOf: iconURL)
     }
-    
+
     public func prepareAppData(from sourceURL: URL) throws -> Data? {
-        return try Data(contentsOf: sourceURL)
+        try ExtractionWorkspace.readBounded(contentsOf: sourceURL)
     }
 }

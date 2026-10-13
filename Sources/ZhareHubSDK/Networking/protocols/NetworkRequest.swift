@@ -15,6 +15,7 @@ public struct NetworkRequest: NetworkRequestProtocol {
     public var encoding: Alamofire.ParameterEncoding
     public var queryParameters: Parameters?
     public var body: Data?
+    public var contentType: String?
     public var timeoutInterval: TimeInterval
     public var cachePolicy: URLRequest.CachePolicy
     
@@ -25,6 +26,7 @@ public struct NetworkRequest: NetworkRequestProtocol {
          queryParameters: Parameters? = nil,
          encoding: ParameterEncoding = URLEncoding.default,
          body: Data? = nil,
+         contentType: String? = nil,
          timeoutInterval: TimeInterval,
          cachePolicy: URLRequest.CachePolicy)
     {
@@ -34,6 +36,7 @@ public struct NetworkRequest: NetworkRequestProtocol {
         self.queryParameters = queryParameters
         self.encoding = encoding
         self.body = body
+        self.contentType = contentType
         self.timeoutInterval = timeoutInterval
         self.cachePolicy = cachePolicy
     }

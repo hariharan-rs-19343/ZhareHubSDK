@@ -10,8 +10,7 @@ import UniformTypeIdentifiers
 
 public extension UTType {
     static var ipa: UTType {
-        let bundleIdentifier = Bundle.main.bundleIdentifier
-        return UTType(bundleIdentifier!) ?? UTType(filenameExtension: "ipa")!
+        UTType(filenameExtension: "ipa") ?? UTType(exportedAs: "com.apple.itunes.ipa")
     }
 
     static var app: UTType {

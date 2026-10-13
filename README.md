@@ -4,7 +4,7 @@ A Swift package for processing, extracting, and parsing **iOS / macCatalyst appl
 
 ZhareHubSDK turns a raw app archive into a strongly-typed, ready-to-upload payload:
 
-- **iOS / macCatalyst** — extracts the app binary, app icon, `Info.plist`, and embedded provisioning profile, parses bundle metadata, and generates the OTA installation manifest.
+- **iOS / macCatalyst** — extracts the app binary, app icon, `Info.plist`, and embedded provisioning profile. `BundleProperties.deviceFamily` preserves `UIDeviceFamily`, and `supportedPlatforms` normalizes it to iOS, iPadOS, macOS, macCatalyst, watchOS, or visionOS. An iPad-only family value of `[2]` stays iPadOS.
 - **Android** (macCatalyst-only at runtime) — runs `aapt2 dump badging` via a host-supplied shell, parses package metadata, extracts the app icon (raster or vector / adaptive-icon rendered to PNG), and recovers the v1 / v2 / v3 signing certificate.
 
 Everything is shipped over the network with progress reporting and cancellation.
@@ -38,8 +38,7 @@ Or in Xcode: **File → Add Package Dependencies…** and enter the repository U
 | Package | Version | Purpose |
 |---------|---------|---------|
 | [Alamofire](https://github.com/Alamofire/Alamofire) | 5.10.0+ | HTTP networking |
-| [Zip](https://github.com/marmelroy/Zip) | 2.1.2+ | Archive extraction / compression (internal, iOS path) |
-| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | 0.9.19+ | Single-entry archive reads (internal, APK path) |
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | 0.9.19+ | Contained archive reads and writes |
 | [SUICore](https://github.com/hariharan-rs-19343/SUICore) | main | File management, logging, connectivity, default avatar |
 
 ---
@@ -87,7 +86,7 @@ ZhareHubSDK
 import ZhareHubSDK
 
 let handler = PackageExtractionHandler()
-let result = handler.initiateAppExtraction(from: fileURL, fileName: "MyApp.ipa")
+let result = await handler.initiateAppExtraction(from: fileURL, fileName: "MyApp.ipa")
 
 switch result {
 case .success(let model):
@@ -172,7 +171,7 @@ case .failure(let error):
 1. `aapt2 dump badging <apk>` (via injected shell).
 2. [DefaultAPKBadgingParser](Sources/ZhareHubSDK/androidPackageHandler/PackageParsingHandler/DefaultAPKBadgingParser.swift) → [APKBundleProperties](Sources/ZhareHubSDK/androidPackageHandler/PackageParsingHandler/Models/APKBundleProperties.swift).
 3. **In parallel:**
-   - [DefaultAPKIconExtractor](Sources/ZhareHubSDK/androidPackageHandler/IconHandler/DefaultAPKIconExtractor.swift) — 4 strategies: direct raster path → vector / adaptive-icon rendered via [APKVectorIconParser](Sources/ZhareHubSDK/androidPackageHandler/IconHandler/APKVectorIconParser.swift) → adaptive-icon foreground PNG resolution → density scan → best-square-PNG fallback for obfuscated APKs.
+   - [DefaultAPKIconExtractor](Sources/ZhareHubSDK/androidPackageHandler/IconHandler/DefaultAPKIconExtractor.swift) — direct raster path → vector / adaptive-icon rendering → adaptive foreground PNG → launcher density scan → square PNG only when a declared icon failed → stock launcher icon.
    - [DefaultAPKSignatureExtractor](Sources/ZhareHubSDK/androidPackageHandler/SignatureHandler/DefaultAPKSignatureExtractor.swift) — native Swift parsing of the APK Signing Block (no shell calls): v1 (`META-INF/MANIFEST.MF` + `.RSA`/`.DSA`/`.EC`), v2 (block ID `0x7109871a`), v3 (block ID `0xf05368c0`); DER-decodes the signer certificate, picks Organization > Common Name > OU.
 4. Reads raw APK bytes for upload.
 5. Aggregates into [APKExtractionModel](Sources/ZhareHubSDK/androidPackageHandler/PackageParsingHandler/Models/APKExtractionModel.swift).
@@ -242,7 +241,7 @@ let manifest = parser.generatePropertyList(
 
 #### Key Models
 
-- [BundleProperties](Sources/ZhareHubSDK/iOSPackageHandler/PackageParsingHandler/Models/BundleProperties.swift) — `Decodable` + `Hashable`. Maps `CFBundleName`, `CFBundleShortVersionString`, `CFBundleVersion`, `CFBundleIdentifier`, `MinimumOSVersion`, `UIRequiredDeviceCapabilities`, `CFBundleSupportedPlatforms`, primary `CFBundleIcons` file, first `CFBundleURLTypes` redirect URL, and `LSApplicationCategoryType` → `Bundle.ApplicationCategory`.
+- [BundleProperties](Sources/ZhareHubSDK/iOSPackageHandler/PackageParsingHandler/Models/BundleProperties.swift) — `Decodable` + `Hashable`. Maps bundle name, versions, identifier, minimum OS, required device capabilities, raw `CFBundleSupportedPlatforms`, `deviceFamily` (`device_family`, from `UIDeviceFamily`), and normalized `supportedPlatforms` (`supported_platforms`: iOS, iPadOS, macOS, macCatalyst, watchOS, visionOS). An iPad-only app whose device family is `[2]` resolves to iPadOS only. Also maps the primary icon, the first URL type, and the application category.
 - [MobileProvision](Sources/ZhareHubSDK/iOSPackageHandler/PackageParsingHandler/Models/MobileProvision.swift) — Name, team identifiers, team name, creation/expiration dates, `isExpired`. Includes a separate `Entitlements` struct.
 - [PackageExtractionModel](Sources/ZhareHubSDK/iOSPackageHandler/PackageParsingHandler/Models/PackageExtractionModel.swift) — Aggregated extraction output: `fileName`, `appIcon`, `app`, `mobileProvision`, `infoPropertyList`, optional `installationPList`. Provides `isContentAvailable()`.
 - [Bundle.ApplicationCategory](Sources/ZhareHubSDK/Utilities/Extensions/Bundle+.swift) — Full enumeration of Apple's `LSApplicationCategoryType` values with `friendlyName`.
@@ -284,8 +283,9 @@ let result: MyDecodable = try await service.execute(request: request)
 #### Behaviors
 
 - Pre-flight check via `ConnectionStatus.shared.isNetworkAvailable` (from SUICore) — throws `NetworkError.noNetworkAvailable` when offline.
-- `validateHTTPResponse` maps status codes (400, 401, 403, 404, 408, 500) to typed `NetworkError` cases.
-- All in-flight uploads/downloads are tracked by UUID and can be cancelled via `cancelUploads()`, `cancelDownloads()`, or `cancelAllRequests()`. Cancellation is also invoked on `deinit`.
+- Query parameters stay on the URL, and the request body is sent separately. `timeoutInterval` and `cachePolicy` are applied to the `URLRequest`.
+- Every call validates HTTP status `200..<300`. `validateHTTPResponse` maps 400, 401, 403, 404, 408, 409, 429, 500, 502, and 503.
+- In-flight requests are tracked under a lock. Cancelling the Swift task, calling `cancelAllRequests()`, or releasing the service cancels them. Logs omit query values and URL userinfo.
 
 ---
 
@@ -301,7 +301,7 @@ All conform to a shared [ErrorProtocol](Sources/ZhareHubSDK/Errors/Protocols/Err
 
 ## Constants
 
-[ZHConstants](Sources/ZhareHubSDK/ZHConstants.swift):
+[ZhareHubConstants](Sources/ZhareHubSDK/ZhareHubConstants.swift):
 
 | Name | Value |
 |------|-------|
@@ -310,9 +310,8 @@ All conform to a shared [ErrorProtocol](Sources/ZhareHubSDK/Errors/Protocols/Err
 | `EMBEDDED_PROVISION_PROFILE` | `embedded.provisionprofile` |
 | `INFO_PLIST` | `Info.plist` |
 | `INSTALLATION_PREFIX` | `itms-services://?action=download-manifest&url=` |
-| `AAPT2_TOOL_NAME` | `aapt2` |
 | `APK_FILE_EXTENSION` | `apk` |
-| `ANDROID_MANIFEST` | `AndroidManifest.xml` |
+| `APP_FILE_EXTENSION` | `app` |
 
 ---
 
@@ -322,7 +321,7 @@ All conform to a shared [ErrorProtocol](Sources/ZhareHubSDK/Errors/Protocols/Err
 swift test
 ```
 
-Tests live under [Tests/ZhareHubSDKTests/ZhareHubSDKTests.swift](Tests/ZhareHubSDKTests/ZhareHubSDKTests.swift).
+Tests live under [Tests/ZhareHubSDKTests](Tests/ZhareHubSDKTests). Android icon parsing is covered by `APKIconExtractionTests.swift`. Real-APK cases run only when `ZH_AAPT2_PATH` and an APK path are set.
 
 ---
 

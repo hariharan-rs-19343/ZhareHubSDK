@@ -8,9 +8,18 @@
 import Foundation
 import SUICore
 
-public enum PropertyListError: Error {
+public enum PropertyListError: LocalizedError {
     case missingRequiredData
     case failedToCreateFile
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingRequiredData:
+            return "The installation manifest is missing a file name, bundle identifier, or version."
+        case .failedToCreateFile:
+            return "The installation manifest could not be written."
+        }
+    }
 }
 
 public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
@@ -48,7 +57,9 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
         }
         
         let plistDict = createPlistDictionary(ipaURL: ipaURL, fileName: finalFileName, bundleIdentifier: finalBundleIdentifier, bundleVersion: finalBundleVersion)
-        let fileURL = generatePlistFileURL(fileName: finalFileName)
+        guard let fileURL = generatePlistFileURL(fileName: finalFileName) else {
+            return .failure(PropertyListError.failedToCreateFile)
+        }
         
         do {
             let plistData = try PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)
@@ -141,7 +152,9 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
     private func rangeOfStartAndEndIndex(of data: Data) throws -> (Int, Int) {
         // Locate the start and end markers for the XML content
         guard let xmlStartRange = data.range(of: Data("<?xml".utf8))?.lowerBound,
-              let plistEndRange = data.range(of: Data("</plist>".utf8))?.upperBound
+              let plistEndRange = data.range(of: Data("</plist>".utf8))?.upperBound,
+              xmlStartRange < plistEndRange,
+              plistEndRange <= data.count
         else {
             throw FileConversionError.fileReadFailed
         }
@@ -168,10 +181,16 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
         var resolvedBundleIdentifier = bundleIdentifier
         var resolvedBundleVersion = bundleVersion
         
-        if let content = content {
-            resolvedFileName = content[BundleProperties.CodingKeys.bundleName.rawValue] as? String
-            resolvedBundleIdentifier = content[BundleProperties.CodingKeys.bundleIdentifier.rawValue] as? String
-            resolvedBundleVersion = content[BundleProperties.CodingKeys.bundleVersionShort.rawValue] as? String
+        if let content {
+            if let name = content[BundleProperties.CodingKeys.bundleName.rawValue] as? String {
+                resolvedFileName = name
+            }
+            if let identifier = content[BundleProperties.CodingKeys.bundleIdentifier.rawValue] as? String {
+                resolvedBundleIdentifier = identifier
+            }
+            if let version = content[BundleProperties.CodingKeys.bundleVersionShort.rawValue] as? String {
+                resolvedBundleVersion = version
+            }
         }
         
         guard let finalFileName = resolvedFileName,
@@ -194,8 +213,9 @@ public final class DefaultPropertyListHandler: PropertyListHandlerProtocol {
 
      - Returns: The URL where the plist file will be saved.
      */
-    private func generatePlistFileURL(fileName: String) -> URL {
-        return cacheDirectory.appending(path: fileName).appendingPathExtension("plist")
+    private func generatePlistFileURL(fileName: String) -> URL? {
+        guard let name = ExtractionWorkspace.singlePathComponent(fileName) else { return nil }
+        return cacheDirectory.appending(component: name).appendingPathExtension("plist")
     }
     
     /**
